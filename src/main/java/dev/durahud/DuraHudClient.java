@@ -8,6 +8,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -23,6 +24,17 @@ public class DuraHudClient implements ClientModInitializer {
 
     public static DuraHudConfig config() {
         return config;
+    }
+
+    /**
+     * 当前版本号，取自 {@code fabric.mod.json}（构建时由 {@code gradle.properties} 的
+     * {@code mod_version} 展开）。开发环境或元数据缺失时返回 {@code "?"}。
+     * 每次改动都要先递增它，见 README 2.4。
+     */
+    public static String version() {
+        return FabricLoader.getInstance().getModContainer(MOD_ID)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("?");
     }
 
     @Override
@@ -48,6 +60,6 @@ public class DuraHudClient implements ClientModInitializer {
             }
         });
 
-        LOGGER.info("[DuraHUD] 已初始化（纯客户端，零自定义贴图，复用原版 GUI 图集）");
+        LOGGER.info("[DuraHUD] 已初始化 v{}（纯客户端，零自定义贴图，复用原版 GUI 图集）", version());
     }
 }

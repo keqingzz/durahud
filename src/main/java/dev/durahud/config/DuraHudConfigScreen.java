@@ -63,7 +63,7 @@ public class DuraHudConfigScreen extends Screen {
     private int animationRow = -1;
 
     public DuraHudConfigScreen(Screen parent) {
-        super(Text.translatable("durahud.config.title"));
+        super(Text.translatable("durahud.config.title").append(Text.literal(" v" + DuraHudClient.version())));
         this.parent = parent;
     }
 
