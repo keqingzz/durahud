@@ -1,6 +1,7 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
+import dev.durahud.config.DuraHudConfig.Anchor;
 import dev.durahud.config.DuraHudConfig.BarSide;
 import dev.durahud.config.DuraHudConfig.Orientation;
 import dev.durahud.config.DuraHudConfig.ValuePlacement;
@@ -209,19 +210,44 @@ public final class HudLayout {
         // 这一步对锚点也是必要的：HOTBAR_LEFT / HOTBAR_RIGHT 把 HUD 的顶边对齐热键栏顶边
         // （y = sh - 22），只要 HUD 比 22 高，底边就会掉到屏幕外 —— 默认「条在格子下方」
         // 的高度就是 29。装得下时保证完整可见，装不下时对齐到左上角，绝不整块落到屏幕外。
-        originX = clampOnScreen(x + cfg.offsetX, screenW, sw);
-        originY = clampOnScreen(y + cfg.offsetY, screenH, sh);
+        // 两段式夹取。第一段只夹锚点自己：锚点表达的是「贴边 / 居中 / 对齐热键栏」这种意图，
+        // 装得下时仍旧完整可见（HOTBAR_LEFT 就是靠这一步把比热键栏高的整块顶上来）。
+        // 第二段才加上用户的偏移量，并且允许最多露出半个格子 —— 用户想把 HUD 稍微推过屏幕
+        // 边缘是可以的（见 README 6.6），但再往外就拦住：否则编辑框也跑到屏外，救不回来。
+        boolean custom = cfg.anchor == Anchor.CUSTOM;
+        int baseX = custom ? 0 : clampOnScreen(x, screenW, sw, 0);
+        int baseY = custom ? 0 : clampOnScreen(y, screenH, sh, 0);
+        // 整块比窗口还大时不再给余量：这时「从屏幕内开始画」比「两面各切一点」更有用，
+        // 也让装不下的轴保持 origin >= 0（HudLayoutTest 的不变量之一）。
+        int allowX = screenW <= sw ? halfCell(Metrics.CELL_W) : 0;
+        int allowY = screenH <= sh ? halfCell(Metrics.CELL_H) : 0;
+        originX = clampOnScreen(baseX + cfg.offsetX, screenW, sw, allowX);
+        originY = clampOnScreen(baseY + cfg.offsetY, screenH, sh, allowY);
     }
 
-    /** 让一段长 size 的内容尽量完整地落在 [margin, limit - margin] 内。 */
-    private static int clampOnScreen(int value, int size, int limit) {
-        int margin = Metrics.SCREEN_MARGIN;
-        if (size + margin * 2 > limit) {
-            // 连两条边距都放不下：宁可不要边距，也要让右 / 下边不出屏（limit - size 可能小于 margin，
-            // 甚至为负 —— 那时候只能从 0 开始画，超出的部分本来就没救）。
-            return Math.max(0, Math.min(margin, limit - size));
+    /** 允许露在屏幕外的像素数：半个格子（按当前缩放换算）。 */
+    private int halfCell(int cellSize) {
+        return Math.round(cellSize * scale / 2.0F);
+    }
+
+    /**
+     * 把一段长 size 的内容夹到屏幕附近：每边最多允许 {@code allow} 像素露在外面。
+     *
+     * <p>余量还会再被 {@code size / 2} 夹一次：块本身比两个余量还窄时（理论上只可能出现在
+     * 单元测试的畸形输入里），至少保证一半还在屏幕内，不会整块飘出去。</p>
+     *
+     * <p>连「内容 + 余量」都放不进这个小窗口时退回 [0, limit - size]：从屏幕内开始画，
+     * 超出的部分留在屏外 —— 这时候任何夹取都救不了，但至少能让人看见、点得到。</p>
+     */
+    private static int clampOnScreen(int value, int size, int limit, int allow) {
+        int room = Math.max(0, Math.min(allow, size / 2));
+        int low = -room;
+        int high = limit - size + room;
+        if (low > high) {
+            low = 0;
+            high = Math.max(0, limit - size);
         }
-        return Math.max(margin, Math.min(value, limit - margin - size));
+        return Math.max(low, Math.min(value, high));
     }
 
     // ------------------------------------------------------------------

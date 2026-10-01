@@ -99,9 +99,12 @@ public final class DurabilityEntry {
      *
      * <p>第一次出现在视图里（或关掉动画）时直接落位：格子该在哪儿就在哪儿开始淡入，
      * 而不是从上一帧的旧位置飞过来 —— 视图重建、窗口尺寸变化时尤其明显。</p>
+     *
+     * <p><b>编辑模式永远不平滑</b>：拖动时外框是跟着鼠标立刻走的，格子若还在用缓动追，
+     * 就会看到「框走了、格子还在后面飘」。H 模式下的目标就是所见即所得，所以直接落位。</p>
      */
     public void slideTo(float targetX, float targetY, float dtSeconds, DuraHudConfig cfg) {
-        if (onScreen && cfg.animateCells) {
+        if (onScreen && cfg.animateCells && !cfg.editMode) {
             drawX = FadeState.slide(drawX, targetX, dtSeconds, cfg.animationMillis);
             drawY = FadeState.slide(drawY, targetY, dtSeconds, cfg.animationMillis);
         } else {
