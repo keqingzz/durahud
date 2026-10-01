@@ -39,7 +39,12 @@ public final class HudRenderer {
     public static void render(class_332 ctx, DuraHudConfig cfg) {
         class_310 mc = class_310.method_1551();
         if (!cfg.enabled || mc.field_1724 == null || mc.field_1690.field_1842) {
-            return;
+            if (!cfg.editMode) {
+                return;
+            }
+            // 编辑模式是例外：H 键界面只能在游戏里打开，但那时 HUD 可能被关掉或被 F1 隐藏。
+            // 这里继续往下走一遍几何，否则编辑界面上根本没有外框，HudLayout.last() 还会停留在
+            // 上一次的陈旧几何（换过窗口尺寸后拖动就对不齐）。ENTRIES.refresh 对 null 玩家是安全的。
         }
         float dtSeconds = frameSeconds();
         ENTRIES.refresh(mc, cfg, dtSeconds);
@@ -137,10 +142,11 @@ public final class HudRenderer {
         if (!layout.hasText()) {
             return;
         }
-        String label = label(cfg, content);
+        // 标签与字宽都由 CellContent 缓存：数字没变的帧既不拼字符串、也不量字形宽度。
+        String label = content.label(cfg, mc.field_1772);
         if (!label.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, label,
-                    layout.textOffsetX(mc.field_1772.method_1727(label)),
+                    layout.textOffsetX(content.labelWidth()),
                     layout.textOffsetY(), severity.textColor);
         }
     }
@@ -193,26 +199,6 @@ public final class HudRenderer {
         int filled = Math.max(0, Math.min(w, Math.round(w * ratio)));
         Atlas.bossBar(ctx, x, y, w, h, severity.barColorIndex, false);
         Atlas.bossBar(ctx, x, y, filled, h, severity.barColorIndex, true);
-    }
-
-    /**
-     * 文字内容取自内容快照：淡出期间显示的仍是内容消失前的那个百分比。
-     *
-     * <p>{@code VALUE} 优先显示「剩余/上限」；没有原版数值的物品（自定义耐久条）退化成百分比 ——
-     * 这与旧版「showValue 优先、否则看 showPercent」的取值顺序一致。</p>
-     */
-    private static String label(DuraHudConfig cfg, CellContent content) {
-        return switch (cfg.valueDisplay) {
-            case VALUE -> content.hasNumeric()
-                    ? content.remaining() + "/" + content.max()
-                    : percent(content);
-            case PERCENT -> percent(content);
-            default -> "";
-        };
-    }
-
-    private static String percent(CellContent content) {
-        return content.hasBar() ? Math.round(content.ratio() * 100.0F) + "%" : "";
     }
 
     /** 编辑模式下的虚线外框；fill() 会关掉混合，所以最后把混合恢复回去。 */

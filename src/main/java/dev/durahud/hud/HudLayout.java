@@ -72,7 +72,10 @@ public final class HudLayout {
         cells = Math.max(1, cellCount);
         vertical = cfg.orientation == Orientation.VERTICAL;
         barSide = cfg.barPlacement;
-        scale = cfg.scale;
+        // 防御性夹取：sanitize() 只在读盘 / 导入 / 重置时跑，直接改字段的路径（滑条、测试）也要安全。
+        scale = Float.isFinite(cfg.scale) && cfg.scale > 0.0F
+                ? Math.max(0.25F, Math.min(4.0F, cfg.scale))
+                : 1.0F;
         barLength = resolveBarLength(cfg);
         textWidth = Math.max(0, reservedText);
         textSide = textWidth > 0
@@ -190,30 +193,33 @@ public final class HudLayout {
                 y = sh - Metrics.SCREEN_MARGIN - screenH;
             }
             case CUSTOM -> {
-                originX = cfg.offsetX;
-                originY = cfg.offsetY;
-                return;
+                // 自定义位置：锚点就是屏幕原点，「偏移量」本身就是绝对坐标 —— 下面统一再加一次
+                // 偏移就得到该坐标（这里不能再写一遍 offset，否则加两次，HUD 会跑到两倍远）。
+                x = 0;
+                y = 0;
             }
             default -> {
                 x = sw / 2 - screenW / 2;
                 y = sh - 42 - screenH;
             }
         }
-        // 收尾：把 HUD 拉回屏幕内。
-        // 这一步是必要的：HOTBAR_LEFT / HOTBAR_RIGHT 把 HUD 的顶边对齐热键栏顶边
+        // 收尾：把 HUD 拉回屏幕内。偏移量必须和锚点位置<b>一起</b>夹取 —— 分开夹的话，
+        // 一个很大的 offsetX（手改配置、换过分辨率）照样能把 HUD 推到屏幕外，而且编辑框
+        // 也画在屏外，连 H 编辑界面都救不回来。
+        // 这一步对锚点也是必要的：HOTBAR_LEFT / HOTBAR_RIGHT 把 HUD 的顶边对齐热键栏顶边
         // （y = sh - 22），只要 HUD 比 22 高，底边就会掉到屏幕外 —— 默认「条在格子下方」
         // 的高度就是 29。装得下时保证完整可见，装不下时对齐到左上角，绝不整块落到屏幕外。
-        x = clampOnScreen(x, screenW, sw);
-        y = clampOnScreen(y, screenH, sh);
-        originX = x + cfg.offsetX;
-        originY = y + cfg.offsetY;
+        originX = clampOnScreen(x + cfg.offsetX, screenW, sw);
+        originY = clampOnScreen(y + cfg.offsetY, screenH, sh);
     }
 
     /** 让一段长 size 的内容尽量完整地落在 [margin, limit - margin] 内。 */
     private static int clampOnScreen(int value, int size, int limit) {
         int margin = Metrics.SCREEN_MARGIN;
         if (size + margin * 2 > limit) {
-            return margin;
+            // 连两条边距都放不下：宁可不要边距，也要让右 / 下边不出屏（limit - size 可能小于 margin，
+            // 甚至为负 —— 那时候只能从 0 开始画，超出的部分本来就没救）。
+            return Math.max(0, Math.min(margin, limit - size));
         }
         return Math.max(margin, Math.min(value, limit - margin - size));
     }
@@ -290,10 +296,13 @@ public final class HudLayout {
         };
     }
 
+    /** 光标是否落在 HUD 上（H 编辑界面用它判断「点住的是不是格子」）。 */
     public boolean containsScreen(double mx, double my) {
+        // 半像素容差：screenW / screenH 是取整后的整数，而真正画出来的是浮点变换，
+        // 边界上最多差 1 像素 —— 正好点在最右一列边缘时不该判成「没点到」。
         return screenW > 0 && screenH > 0
-                && mx >= originX && mx < originX + screenW
-                && my >= originY && my < originY + screenH;
+                && mx >= originX - 0.5 && mx < originX + screenW + 0.5
+                && my >= originY - 0.5 && my < originY + screenH + 0.5;
     }
 
     // ------------------------------------------------------------------

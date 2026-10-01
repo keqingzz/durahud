@@ -107,7 +107,7 @@ public class DuraHudEditScreen extends class_437 {
                 cfg.offsetX = 0;
                 cfg.offsetY = 0;
                 cfg.scale = 1.0F;
-                cfg.save();
+                dirty = true;
             }
             case GLFW.GLFW_KEY_H -> method_25419();
             default -> {
@@ -125,16 +125,35 @@ public class DuraHudEditScreen extends class_437 {
         dirty = true;
     }
 
+    /**
+     * 方向键微调。<b>基准是 HUD 当前实际所在的位置</b>：CUSTOM 锚点的 offset 是绝对原点，
+     * 而其他锚点上的 offset 只是相对位移 —— 直接把「相对值 + 步长」写进 CUSTOM 会让整块瞬移
+     * （默认 HOTBAR_ABOVE、offset 0 时按一次「→」就跳到屏幕左上角）。
+     */
     private void nudge(int dx, int dy) {
-        cfg.anchor = DuraHudConfig.Anchor.CUSTOM;
-        cfg.offsetX += dx;
-        cfg.offsetY += dy;
-        cfg.save();
+        HudLayout layout = HudLayout.last();
+        if (cfg.anchor == DuraHudConfig.Anchor.CUSTOM) {
+            cfg.offsetX += dx;
+            cfg.offsetY += dy;
+        } else if (layout != null) {
+            cfg.anchor = DuraHudConfig.Anchor.CUSTOM;
+            cfg.offsetX = layout.originX() + dx;
+            cfg.offsetY = layout.originY() + dy;
+        } else {
+            // 还没画过（HudLayout.last() 为 null）：留在原锚点上挪相对偏移，这样一定不会跳。
+            cfg.offsetX += dx;
+            cfg.offsetY += dy;
+        }
+        dirty = true;
     }
 
+    /**
+     * 滚轮/按键缩放只改内存并标脏：1.40.0 之前每一格滚轮都写一次配置文件，
+     * 在滚轮上滚一圈就是十几次磁盘写入。退出编辑界面时 {@link #method_25432()} 统一落盘。
+     */
     private void scale(float delta) {
         cfg.scale = Math.max(0.25F, Math.min(4.0F, cfg.scale + delta));
-        cfg.save();
+        dirty = true;
     }
 
     private void flush() {

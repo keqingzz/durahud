@@ -2,8 +2,10 @@ package dev.durahud.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import dev.durahud.DuraHudClient;
 import dev.durahud.config.DuraHudConfig.Anchor;
 import dev.durahud.config.DuraHudConfig.BarSide;
@@ -35,6 +37,17 @@ public final class ConfigFile {
     private static final String PRESET_NAME = "durahud-preset.json";
     private static final String VERSION_KEY = "configVersion";
 
+    /**
+     * 上一次 {@link #load()} 之后要不要写回文件。首次运行（文件还不存在）与升级过格式时为
+     * true；读失败时<b>必须</b>是 false —— 否则一份坏掉的配置会被默认值直接覆盖掉。
+     */
+    private static boolean writeBack;
+
+    /** 上一次 load() 是否需要把内存里的配置写回磁盘（见 {@link #writeBack}）。 */
+    public static boolean shouldWriteBack() {
+        return writeBack;
+    }
+
     /** 已废弃的键。升级时顺手删掉，旧文件不会一直带着垃圾。 */
     private static final String[] REMOVED_KEYS = {
         "onlyDamageable", // 旧版：只显示可损坏的手持物，会把模组装备一起过滤掉
@@ -59,16 +72,21 @@ public final class ConfigFile {
     public static DuraHudConfig load() {
         Path path = path();
         if (!Files.exists(path)) {
+            writeBack = true;   // 首次运行：把默认值落成文件，用户才有东西可改
             return new DuraHudConfig();
         }
         try {
             JsonObject root = parse(Files.readString(path, StandardCharsets.UTF_8));
-            migrate(root);
+            boolean upgraded = migrate(root);
             DuraHudConfig cfg = read(root);
             cfg.sanitize();
+            writeBack = upgraded;   // 只有真的升级过才回写；平时读一次不碰磁盘
             return cfg;
         } catch (Exception e) {
-            DuraHudClient.LOGGER.warn("[DuraHUD] 配置文件读取失败，改用默认值：{}", e.toString());
+            // 文件连 JSON 都不是（语法坏了、顶层不是对象）。刻意<b>不</b>回写：默认值覆盖上去
+            // 就把用户手改过的设置永久毁了 —— 保留原文件，让人能自己看一眼、修一修或删掉。
+            writeBack = false;
+            DuraHudClient.LOGGER.warn("[DuraHUD] 配置文件读取失败，本次先用默认值，原文件保持不动：{}", e.toString());
             return new DuraHudConfig();
         }
     }
@@ -111,11 +129,13 @@ public final class ConfigFile {
         }
     }
 
-    private static JsonObject parse(String text) {
+    /** 包内可见：让单测直接覆盖读写路径（{@link #path()} 依赖 FabricLoader，离线跑不了）。 */
+    static JsonObject parse(String text) {
         return JsonParser.parseString(text).getAsJsonObject();
     }
 
-    private static JsonObject toJson(DuraHudConfig cfg) {
+    /** 包内可见，理由同 {@link #parse(String)}。 */
+    static JsonObject toJson(DuraHudConfig cfg) {
         JsonObject root = GSON.toJsonTree(cfg).getAsJsonObject();
         root.addProperty(VERSION_KEY, CONFIG_VERSION);
         return root;
@@ -125,10 +145,10 @@ public final class ConfigFile {
      * 按版本号逐级升级。每加一个版本就补一个 if 分支，旧文件永远能被读进来。
      * 迁移只改键的集合，字段本身的缺省由 {@link #read} 的「有才覆盖」负责。
      */
-    static void migrate(JsonObject root) {
-        int from = root.has(VERSION_KEY) ? root.get(VERSION_KEY).getAsInt() : 0;
+    static boolean migrate(JsonObject root) {
+        int from = versionOf(root);
         if (from >= CONFIG_VERSION) {
-            return;
+            return false;
         }
         if (from < 1) {
             for (String key : REMOVED_KEYS) {
@@ -156,23 +176,22 @@ public final class ConfigFile {
             // 所以这一步现在只剩「老文件也走过一遍版本号」的意义。
         }
         if (from < 6) {
-            // v5 → v6：三处合并。
+            // v5 → v6：三处合并。每条都只在「旧键有、新键还没有」时才写 —— 手改过的文件里
+            // 已经存在的 animationMillis / valueDisplay / showEmptySlots 不能被这次迁移盖掉。
             // 1) cellFadeSpeed（四档枚举）→ animationMillis（毫秒，界面改成滑条）。
-            if (root.has("cellFadeSpeed")) {
+            if (!root.has("animationMillis") && isString(root, "cellFadeSpeed")) {
                 root.addProperty("animationMillis", fadeSpeedToMillis(root.get("cellFadeSpeed").getAsString()));
             }
             // 2) showValue / showPercent（两个布尔）→ valueDisplay（OFF / PERCENT / VALUE）：
             //    有「剩余-上限」就优先它，否则看百分比 —— 与旧 label() 的取值顺序一致。
-            boolean showValue = root.has("showValue") && root.get("showValue").getAsBoolean();
-            boolean showPercent = root.has("showPercent") && root.get("showPercent").getAsBoolean();
-            if (showValue) {
-                root.addProperty("valueDisplay", "VALUE");
-            } else if (showPercent) {
-                root.addProperty("valueDisplay", "PERCENT");
+            //    两个都是 false 时不发明这个键：v5 里「两个都关」的写法就是键不在，缺省自然落到 OFF。
+            if (!root.has("valueDisplay") && (isTrue(root, "showValue") || isTrue(root, "showPercent"))) {
+                root.addProperty("valueDisplay", isTrue(root, "showValue") ? "VALUE" : "PERCENT");
             }
             // 3) compactCells → 合并进 showEmptySlots：旧的 compactCells=false 表示「空槽位恒定占位」，
-            //    正是新语义里 showEmptySlots=true 的样子。
-            if (root.has("compactCells") && !root.get("compactCells").getAsBoolean()) {
+            //    正是新语义里 showEmptySlots=true 的样子。这一条必须让旧开关说了算 —— v5 的 showEmptySlots
+            //    只管「画不画空槽位边框」，正是被并掉的那一半，所以不能因为它已经存在就跳过换算。
+            if (root.has("compactCells") && !isTrue(root, "compactCells")) {
                 root.addProperty("showEmptySlots", true);
             }
             root.remove("cellFadeSpeed");
@@ -182,6 +201,28 @@ public final class ConfigFile {
         }
         root.addProperty(VERSION_KEY, CONFIG_VERSION);
         DuraHudClient.LOGGER.info("[DuraHUD] 配置已从版本 {} 升级到 {}。", from, CONFIG_VERSION);
+        return true;
+    }
+
+    /** 读 configVersion：缺失或不是数字都当作 0（最老的格式），坏值不会让异常冒到 load 之外。 */
+    private static int versionOf(JsonObject root) {
+        JsonElement element = root.get(VERSION_KEY);
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
+            return 0;
+        }
+        return element.getAsInt();
+    }
+
+    /** 迁移里读旧布尔：只有真的是 boolean true 才算 true（手改成字符串 / null 一律当 false）。 */
+    private static boolean isTrue(JsonObject root, String key) {
+        JsonElement element = root.get(key);
+        return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isBoolean()
+                && element.getAsBoolean();
+    }
+
+    private static boolean isString(JsonObject root, String key) {
+        JsonElement element = root.get(key);
+        return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isString();
     }
 
     /** v5 的 cellFadeSpeed 枚举名换算成毫秒；认不出来的值退回默认 200。 */
@@ -198,7 +239,8 @@ public final class ConfigFile {
     }
 
     /** 把 JSON 读成配置；缺字段保留默认值（「有才覆盖」只在这里写一遍）。 */
-    private static DuraHudConfig read(JsonObject root) {
+    /** 包内可见，理由同 {@link #parse(String)}。 */
+    static DuraHudConfig read(JsonObject root) {
         DuraHudConfig cfg = new DuraHudConfig();
         Json json = new Json(root);
         cfg.enabled = json.b("enabled", cfg.enabled);
@@ -230,7 +272,15 @@ public final class ConfigFile {
         return cfg;
     }
 
-    /** 只读取值封装：缺字段就返回当前值，「有才覆盖」这件事因此只写一遍。 */
+    /**
+     * 只读取值封装：缺字段、{@code null}、类型不符都返回当前值 ——「有才覆盖」与「一个坏字段
+     * 只影响它自己」这两件事因此只写一遍。
+     *
+     * <p>类型检查不是洁癖：Gson 的 {@code getAsBoolean()} 在 {@code null} / 对象 / 数组上会抛
+     * {@code UnsupportedOperationException}，{@code getAsInt()} 在 {@code "90abc"} 上会抛
+     * {@code NumberFormatException} —— 以前这些异常会冒到 {@link #load()} 的兜底分支，
+     * 让<b>整份</b>配置退回默认值。（更糟的是客户端随后还会把它写回磁盘。）</p>
+     */
     private static final class Json {
 
         private final JsonObject object;
@@ -244,27 +294,69 @@ public final class ConfigFile {
         }
 
         boolean b(String key, boolean current) {
-            return object.has(key) ? object.get(key).getAsBoolean() : current;
+            JsonPrimitive value = primitive(key);
+            if (value == null) {
+                return current;
+            }
+            if (value.isBoolean()) {
+                return value.getAsBoolean();
+            }
+            return reject(key, "布尔值", current);
         }
 
         int i(String key, int current) {
-            return object.has(key) ? object.get(key).getAsInt() : current;
+            JsonPrimitive value = primitive(key);
+            if (value == null) {
+                return current;
+            }
+            if (value.isNumber()) {
+                double raw = value.getAsDouble();   // 绕开 int / long 的字符串解析限制
+                if (Double.isFinite(raw)) {
+                    return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, Math.rint(raw)));
+                }
+            }
+            return reject(key, "整数", current);
         }
 
         float f(String key, float current) {
-            return object.has(key) ? object.get(key).getAsFloat() : current;
+            JsonPrimitive value = primitive(key);
+            if (value == null) {
+                return current;
+            }
+            if (value.isNumber()) {
+                double raw = value.getAsDouble();
+                if (Double.isFinite(raw)) {
+                    return (float) raw;
+                }
+            }
+            return reject(key, "数字", current);
         }
 
         <T extends Enum<T>> T e(String key, Class<T> type, T current) {
-            if (!object.has(key)) {
-                return current;
+            JsonPrimitive value = primitive(key);
+            if (value == null || !value.isString()) {
+                return reject(key, type.getSimpleName(), current);
             }
-            String name = object.get(key).getAsString();
+            String name = value.getAsString();
             for (T candidate : type.getEnumConstants()) {
                 if (candidate.name().equalsIgnoreCase(name)) {
                     return candidate;
                 }
             }
+            return current;   // 认不出来的值（旧版本删掉的选项）静默退回默认值
+        }
+
+        /** 取基本类型值；缺键、null、对象、数组一律返回 null（=「这个字段没写」）。 */
+        private JsonPrimitive primitive(String key) {
+            JsonElement element = object.get(key);
+            if (element == null || !element.isJsonPrimitive()) {
+                return null;
+            }
+            return element.getAsJsonPrimitive();
+        }
+
+        private static <T> T reject(String key, String expected, T current) {
+            DuraHudClient.LOGGER.warn("[DuraHUD] 配置字段 {} 不是{}，已忽略它（其余字段照常读取）。", key, expected);
             return current;
         }
     }

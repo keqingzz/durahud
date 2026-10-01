@@ -23,18 +23,24 @@ final class TrinketsBridge {
     private TrinketsBridge() {
     }
 
+    /**
+     * 复用同一个列表：这个方法每帧都可能被调用（{@link ExtraSlots} 每 tick 至多一次），
+     * 不该每次制造一个 ArrayList。<b>调用方必须立即消费返回值</b>，下一次调用会清空它。
+     */
+    private static final List<class_1799> BUFFER = new ArrayList<>();
+
     static List<class_1799> collect(class_1657 player) {
-        List<class_1799> stacks = new ArrayList<>();
+        BUFFER.clear();
         TrinketComponent component = TrinketsApi.getTrinketComponent(player).orElse(null);
         if (component == null) {
-            return stacks;
+            return BUFFER;
         }
         for (var equipped : component.getAllEquipped()) {
             class_1799 stack = equipped.method_15441();
             if (stack != null && !stack.method_7960()) {
-                stacks.add(stack);
+                BUFFER.add(stack);
             }
         }
-        return stacks;
+        return BUFFER;
     }
 }

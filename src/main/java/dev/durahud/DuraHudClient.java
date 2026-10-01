@@ -1,5 +1,6 @@
 package dev.durahud;
 
+import dev.durahud.config.ConfigFile;
 import dev.durahud.config.DuraHudConfig;
 import dev.durahud.config.DuraHudConfigScreen;
 import dev.durahud.hud.DuraHudEditScreen;
@@ -40,7 +41,9 @@ public class DuraHudClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         config = DuraHudConfig.load();
-        config.save();
+        if (ConfigFile.shouldWriteBack()) {
+            config.save();   // 只有首次运行或升级过格式才落盘，平时启动不碰配置文件
+        }
 
         class_304 editKey = KeyBindingHelper.registerKeyBinding(new class_304(
                 "key.durahud.edit", class_3675.class_307.field_1668, GLFW.GLFW_KEY_H, "key.categories.durahud"));

@@ -21,8 +21,7 @@ final class NumberSliderWidget extends class_357 {
     NumberSliderWidget(int x, int y, int width, int height, String labelKey, double min, double max,
                        double value, boolean integer, boolean autoAtZero,
                        DoubleConsumer setter, Runnable onCommit) {
-        super(x, y, width, height, class_2561.method_43473(),
-                max > min ? (Math.max(min, Math.min(max, value)) - min) / (max - min) : 0.0D);
+        super(x, y, width, height, class_2561.method_43473(), fraction(min, max, value));
         this.labelKey = labelKey;
         this.min = min;
         this.max = max;
@@ -30,6 +29,23 @@ final class NumberSliderWidget extends class_357 {
         this.autoAtZero = autoAtZero;
         this.setter = setter;
         this.onCommit = onCommit;
+        method_25346();
+    }
+
+    /** 值 -> 0..1 的滑条位置；NaN、Infinity、越界值全部夹到端点。 */
+    private static double fraction(double min, double max, double value) {
+        if (!(max > min) || !Double.isFinite(value)) {
+            return 0.0D;
+        }
+        return (Math.max(min, Math.min(max, value)) - min) / (max - min);
+    }
+
+    /**
+     * 从外部改写配置后同步滑条显示（例如 warn 变小、crit 被一起夹小）。
+     * 位置与显示一起更新，避免「配置里是 9、滑条上还写着 50」。
+     */
+    void showValue(double value) {
+        this.field_22753 = fraction(this.min, this.max, value);
         method_25346();
     }
 

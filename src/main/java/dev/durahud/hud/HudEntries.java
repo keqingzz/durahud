@@ -1,6 +1,8 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import net.minecraft.class_1657;
 import net.minecraft.class_1661;
@@ -11,35 +13,42 @@ import net.minecraft.class_310;
  * 当前要画的条目列表：先摆 4 个盔甲格，再摆额外装备槽（饰品），最后才是主手/副手 ——
  * 工具永远排在最后，戴在身上的东西不会被挤到手持物品后面去。
  *
- * <p>视图只在「签名变化」或「额外装备数量变化」时重建，所以每帧只做几次 setStack，
- * 没有对象分配。签名把「有几格盔甲」也算进去，于是自动补位（空槽位不再占位）能立刻反映到
- * 格数上；正在淡出的格子依旧占位（{@link DurabilityEntry#occupiesCell}），所以淡出期间
- * 格数与顺序稳定，淡完才让位、后面的格子才顶上来。</p>
+ * <p><b>视图每帧重建</b>（最多 25 个引用，代价可以忽略）：旧版靠一个「签名」判断要不要重建，
+ * 签名漏掉的字段就会让视图过期；每帧重建之后这一类 bug 不复存在。</p>
+ *
+ * <p><b>额外装备槽按物品身份复用格子</b>：取下一件饰品时，淡出的是那一件自己的格子，
+ * 其余饰品保留各自的淡入淡出与滑动状态 —— 旧版按序号复用实例，表现为「下一个饰品原地
+ * 替换」（README 里记着的那条已知限制）。正在淡出的格子依旧占位
+ * （{@link DurabilityEntry#occupiesCell}），所以格数与顺序在淡出期间是稳的。</p>
  */
 public final class HudEntries {
 
     private static final DurabilityEntry.Kind[] ORDER = DurabilityEntry.Kind.values();
-    private static final int BIT_MAINHAND = 1;
-    private static final int BIT_OFFHAND = 2;
-    /** 盔甲格数量放在第 2 位起（0..4），这样「盔甲格少了一格」也能触发视图重建。 */
-    private static final int ARMOR_SHIFT = 2;
 
     /** 额外装备槽的画面上限，防止某个模组把上百个槽位塞进 HUD。 */
     private static final int MAX_EXTRA = 12;
 
     private final DurabilityEntry[] all = new DurabilityEntry[ORDER.length];
-    private final DurabilityEntry[] extraEntries = new DurabilityEntry[MAX_EXTRA];
+    private final DurabilityEntry[] extraPool = new DurabilityEntry[MAX_EXTRA];
+    /** 每一格当前占第几个额外槽位；-1 = 空闲（新物品可以直接用）。 */
+    private final int[] extraSlot = new int[MAX_EXTRA];
+    /** 本帧重新认领过的格子；没被认领的说明物品已经不在，要开始淡出。 */
+    private final boolean[] extraClaimed = new boolean[MAX_EXTRA];
+
+    /** 本帧的额外槽物品（每 tick 至多向 Trinkets 要一次，槽位内容只会在 tick 里变）。 */
+    private List<class_1799> extraStacks = Collections.emptyList();
+    private long extraStacksTick = Long.MIN_VALUE;
+
     private final DurabilityEntry[] view = new DurabilityEntry[ORDER.length + MAX_EXTRA];
-    private int extraCount;
     private int count;
-    private int mask = -1;
 
     public HudEntries() {
         for (int i = 0; i < ORDER.length; i++) {
             all[i] = new DurabilityEntry(ORDER[i], class_1799.field_8037);
         }
         for (int i = 0; i < MAX_EXTRA; i++) {
-            extraEntries[i] = DurabilityEntry.extra(class_1799.field_8037);
+            extraPool[i] = DurabilityEntry.extra(class_1799.field_8037);
+            extraSlot[i] = -1;
         }
     }
 
@@ -59,13 +68,13 @@ public final class HudEntries {
         for (DurabilityEntry entry : all) {
             entry.commitPlacement();
         }
-        for (DurabilityEntry entry : extraEntries) {
+        for (DurabilityEntry entry : extraPool) {
             entry.commitPlacement();
         }
     }
 
     /**
-     * 每帧刷新物品与动画进度。
+     * 每帧刷新物品、额外装备与动画进度。
      *
      * @param dtSeconds 距上一帧的秒数，交给条目推进淡入淡出
      */
@@ -76,30 +85,78 @@ public final class HudEntries {
             entry.setStack(inventory == null ? class_1799.field_8037 : stackOf(player, inventory, entry.kind()));
             entry.advance(dtSeconds, cfg);
         }
-        int previousExtra = extraCount;
-        extraCount = 0;
+        refreshExtra(player, cfg, dtSeconds);
+        rebuildView(cfg);
+    }
+
+    /**
+     * 额外装备槽：按物品身份认领池子里的格子。
+     *
+     * <p>认领顺序是「同一个栈对象 -> 同一槽位上的同类物品 -> 空闲格 -> 最接近淡完的那一格」，
+     * 所以饰品集合变化时，只有真正变动的那几格会淡入 / 淡出，其余格子保持自己的状态。</p>
+     */
+    private void refreshExtra(class_1657 player, DuraHudConfig cfg, float dtSeconds) {
         if (player != null && cfg.showTrinkets) {
-            List<class_1799> extra = ExtraSlots.collect(player);
-            for (class_1799 stack : extra) {
-                if (extraCount >= MAX_EXTRA) {
-                    break;
-                }
-                DurabilityEntry candidate = extraEntries[extraCount];
-                candidate.setStack(stack == null ? class_1799.field_8037 : stack);
-                candidate.advance(dtSeconds, cfg);
-                if (candidate.occupiesCell(cfg)) {
-                    extraCount++;
-                }
+            if (player.field_6012 != extraStacksTick) {
+                extraStacksTick = player.field_6012;
+                extraStacks = ExtraSlots.collect(player);
             }
+        } else {
+            extraStacks = Collections.emptyList();
+            extraStacksTick = Long.MIN_VALUE;
         }
-        int signature = signatureOf(cfg);
-        if (signature != mask || extraCount != previousExtra) {
-            rebuildView(cfg, signature);
+        Arrays.fill(extraClaimed, false);
+        for (int slot = 0; slot < extraStacks.size() && slot < MAX_EXTRA; slot++) {
+            class_1799 stack = extraStacks.get(slot);
+            if (stack == null || stack.method_7960()) {
+                continue;
+            }
+            int index = claim(stack, slot);
+            if (index < 0) {
+                break;   // 池子满了（理论上不会：槽位上限与池子一样大）
+            }
+            extraPool[index].setStack(stack);
+            extraSlot[index] = slot;
+            extraClaimed[index] = true;
+        }
+        for (int i = 0; i < MAX_EXTRA; i++) {
+            if (!extraClaimed[i]) {
+                extraPool[i].setStack(class_1799.field_8037);   // 物品没了：开始淡出，槽位号先留着
+            }
+            extraPool[i].advance(dtSeconds, cfg);
+            if (!extraPool[i].occupiesCell(cfg)) {
+                extraSlot[i] = -1;                        // 彻底离场，下次从头开始
+            }
         }
     }
 
-    private void rebuildView(DuraHudConfig cfg, int signature) {
-        mask = signature;
+    /** 给一件饰品挑一格；挑不到（池子满了）返回 -1。 */
+    private int claim(class_1799 stack, int slot) {
+        for (int i = 0; i < MAX_EXTRA; i++) {
+            if (!extraClaimed[i] && extraPool[i].stack() == stack) {
+                return i;                                 // 还是那个栈对象：绝大多数帧都走这里
+            }
+        }
+        for (int i = 0; i < MAX_EXTRA; i++) {
+            if (!extraClaimed[i] && extraSlot[i] == slot && class_1799.method_7973(extraPool[i].stack(), stack)) {
+                return i;                                 // 同一槽位上的同一件物品（栈对象被换过）
+            }
+        }
+        for (int i = 0; i < MAX_EXTRA; i++) {
+            if (!extraClaimed[i] && extraSlot[i] < 0) {
+                return i;                                 // 空闲格
+            }
+        }
+        int fallback = -1;
+        for (int i = 0; i < MAX_EXTRA; i++) {
+            if (!extraClaimed[i] && (fallback < 0 || extraPool[i].fade() < extraPool[fallback].fade())) {
+                fallback = i;                             // 都在用：抢最接近淡完的那一格
+            }
+        }
+        return fallback;
+    }
+
+    private void rebuildView(DuraHudConfig cfg) {
         count = 0;
         // 顺序：盔甲 -> 额外装备（饰品）-> 手持。手持永远在最后（工具不与穿戴物混排）。
         for (DurabilityEntry entry : all) {
@@ -107,9 +164,7 @@ public final class HudEntries {
                 view[count++] = entry;
             }
         }
-        for (int i = 0; i < extraCount; i++) {
-            view[count++] = extraEntries[i];
-        }
+        appendExtras(cfg);
         DurabilityEntry mainhand = all[DurabilityEntry.Kind.MAINHAND.ordinal()];
         if (cfg.showMainhand && mainhand.occupiesCell(cfg)) {
             view[count++] = mainhand;
@@ -121,35 +176,22 @@ public final class HudEntries {
     }
 
     /**
-     * 视图签名：只要它变了就重建视图。第 0/1 位是主手/副手，第 {@link #ARMOR_SHIFT} 位起是
-     * 盔甲格数量（0..4）—— 把数量放进来是因为自动补位会让盔甲格随装备增减，光看开关位发现不了。
+     * 额外装备按槽位号排进视图。
+     *
+     * <p>分两趟：先在场上（按槽位号）的，再正在淡出的。淡出的那一格排在<b>最后</b>而不是
+     * 留在原位 —— 它原来的槽位可能已经被新上场的饰品占了，留在原位两格会叠在一起。</p>
      */
-    private int signatureOf(DuraHudConfig cfg) {
-        return (armorCellCount(cfg) << ARMOR_SHIFT) | handBits(cfg);
-    }
-
-    private int armorCellCount(DuraHudConfig cfg) {
-        if (!cfg.showArmor) {
-            return 0;
-        }
-        int cells = 0;
-        for (DurabilityEntry entry : all) {
-            if (entry.kind().armor && entry.occupiesCell(cfg)) {
-                cells++;
+    private void appendExtras(DuraHudConfig cfg) {
+        for (int pass = 0; pass < 2; pass++) {
+            for (int slot = 0; slot < MAX_EXTRA; slot++) {
+                for (int i = 0; i < MAX_EXTRA; i++) {
+                    boolean live = !extraPool[i].stack().method_7960();
+                    if ((pass == 0) == live && extraSlot[i] == slot && extraPool[i].occupiesCell(cfg)) {
+                        view[count++] = extraPool[i];
+                    }
+                }
             }
         }
-        return cells;
-    }
-
-    private int handBits(DuraHudConfig cfg) {
-        int bits = 0;
-        if (cfg.showMainhand && all[DurabilityEntry.Kind.MAINHAND.ordinal()].occupiesCell(cfg)) {
-            bits |= BIT_MAINHAND;
-        }
-        if (cfg.showOffhand && all[DurabilityEntry.Kind.OFFHAND.ordinal()].occupiesCell(cfg)) {
-            bits |= BIT_OFFHAND;
-        }
-        return bits;
     }
 
     private static class_1799 stackOf(class_1657 player, class_1661 inventory, DurabilityEntry.Kind kind) {

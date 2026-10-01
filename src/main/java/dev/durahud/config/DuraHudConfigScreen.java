@@ -49,7 +49,8 @@ public class DuraHudConfigScreen extends class_437 {
     private static final Tab[] TABS = Tab.values();
 
     private final class_437 parent;
-    private final DuraHudConfig cfg = DuraHudClient.config();
+    /** 当前配置：在 {@link #method_25426()} 里取，避免在任何界面打开之前构造本界面时拿到 null。 */
+    private DuraHudConfig cfg;
     /** 当前页的选项（登记顺序 = 布局顺序）。 */
     private final List<Option> options = new ArrayList<>();
     /** 造出来的控件，与 {@link #options} 一一对应。 */
@@ -60,6 +61,12 @@ public class DuraHudConfigScreen extends class_437 {
     /** 需要置灰的行下标（-1 = 本页没有）；置灰条件见 {@link #refreshDependencies()}。 */
     private int wornNonDurableRow = -1;
     private int animationRow = -1;
+    /** 警示页的 crit 阈值所在的行（-1 = 本页没有）。 */
+    private int critRow = -1;
+    /** 警示页的 crit 滑条：warn 变小把它一起夹小时，要同步它的显示。 */
+    private NumberSliderWidget critSlider;
+    /** 界面里改过东西：关屏时统一落盘（滑条拖一次会触发上百次值变化）。 */
+    private boolean dirty;
 
     public DuraHudConfigScreen(class_437 parent) {
         super(class_2561.method_43471("durahud.config.title").method_10852(class_2561.method_43470(" v" + DuraHudClient.version())));
@@ -74,10 +81,13 @@ public class DuraHudConfigScreen extends class_437 {
 
     @Override
     protected void method_25426() {
+        cfg = DuraHudClient.config();
+        cfg.sanitize();   // 手改过的越界值先夹回来，滑条才不会显示 200 而配置里是 100000
         options.clear();
         widgets.clear();
         wornNonDurableRow = -1;
         animationRow = -1;
+        critSlider = null;
         buildPage();
 
         this.layout = ScreenLayout.of(this.field_22789, this.field_22790, options.size(), TABS.length);
@@ -87,9 +97,25 @@ public class DuraHudConfigScreen extends class_437 {
             widgets.add(widget);
             method_37063(widget);
         }
+        critSlider = critRow >= 0 ? (NumberSliderWidget) widgets.get(critRow) : null;
         addTabs();
         addBottomButtons();
         refreshDependencies();
+    }
+
+    /** 改动先只标脏：{@link #method_25432()} 里统一夹取并落盘。 */
+    private void markDirty() {
+        dirty = true;
+    }
+
+    @Override
+    public void method_25432() {
+        super.method_25432();
+        if (dirty) {
+            cfg.sanitize();
+            cfg.save();
+            dirty = false;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -141,9 +167,10 @@ public class DuraHudConfigScreen extends class_437 {
             }
             case WARNING -> {
                 slider("durahud.option.warnThreshold", 1.0D, 100.0D, cfg.warnThreshold, true, false,
-                        v -> cfg.warnThreshold = (int) v, null);
+                        v -> setWarn((int) v), null);
+                critRow = options.size();
                 slider("durahud.option.critThreshold", 0.0D, 99.0D, cfg.critThreshold, true, false,
-                        v -> cfg.critThreshold = (int) v, null);
+                        v -> setCrit((int) v), null);
                 toggle("durahud.option.highlightCritical", cfg.highlightCritical, v -> cfg.highlightCritical = v, null);
             }
             case ANIMATION -> {
@@ -155,13 +182,31 @@ public class DuraHudConfigScreen extends class_437 {
         }
     }
 
+    /**
+     * 警示阈值：{@code crit <= warn - 1} 是 {@code sanitize()} 的规则，界面里就夹好 ——
+     * 否则本次会话按 crit=50 / warn=10 判定（几乎全是红色），重启后 crit 被悄悄改成 9，
+     * 同一个配置文件在两处表现出两种行为。
+     */
+    private void setWarn(int value) {
+        cfg.warnThreshold = value;
+        setCrit(cfg.critThreshold);
+    }
+
+    private void setCrit(int value) {
+        cfg.critThreshold = Math.max(0, Math.min(cfg.warnThreshold - 1, value));
+        if (critSlider != null) {
+            critSlider.showValue(cfg.critThreshold);
+        }
+        markDirty();
+    }
+
     private void toggle(String labelKey, boolean value, Consumer<Boolean> setter, String tipKey) {
         options.add((x, y, width, height) -> {
             boolean[] state = { value };
             class_4185 widget = class_4185.method_46430(onOff(labelKey, state[0]), button -> {
                 state[0] = !state[0];
                 setter.accept(state[0]);
-                cfg.save();
+                markDirty();
                 button.method_25355(onOff(labelKey, state[0]));
                 refreshDependencies();
             }).method_46434(x, y, width, height).method_46431();
@@ -178,7 +223,7 @@ public class DuraHudConfigScreen extends class_437 {
                 index[0] = (index[0] + 1) % values.length;
                 T next = values[index[0]];
                 setter.accept(next);
-                cfg.save();
+                markDirty();
                 button.method_25355(enumLabel(labelKey, valuePrefix, next));
             }).method_46434(x, y, width, height).method_46431();
             return widget;
@@ -189,7 +234,8 @@ public class DuraHudConfigScreen extends class_437 {
                         DoubleConsumer setter, String tipKey) {
         options.add((x, y, width, height) -> {
             NumberSliderWidget widget = new NumberSliderWidget(x, y, width, height, labelKey, min, max,
-                    value, integer, autoAtZero, setter, cfg::save);
+                    value, integer, autoAtZero, setter, this::markDirty);
+            // 注意：拖动期间 onCommit 会被调几十上百次，所以这里只能标脏，不能写盘。
             applyTip(widget, tipKey);
             return widget;
         });
