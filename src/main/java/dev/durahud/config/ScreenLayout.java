@@ -1,7 +1,10 @@
 package dev.durahud.config;
 
 /**
- * 设置界面的布局计算：分页标签栏 + 选项列 + 底部按钮行，全部由当前窗口尺寸推出。
+ * 设置界面的布局计算：左侧竖排分页标签 + 选项列 + 底部按钮行，全部由当前窗口尺寸推出。
+ *
+ * <p>标签是一列竖排的按钮，整列在标题与底部按钮之间垂直居中；标签列右边是选项块，
+ * 标签列 + 间隔 + 选项块作为一个整体在窗口里水平居中，所以标签总是落在屏幕中央偏左的位置。</p>
  *
  * <p>纯数学、零 Minecraft 引用，所以可以用单测覆盖「GUI 缩放拉到最大」这类极端尺寸
  * （见 {@code ScreenLayoutTest}）：只要窗口还进得去游戏，控件就必须留在屏幕里 —— 这正是
@@ -13,11 +16,16 @@ public final class ScreenLayout {
     public static final int MARGIN = 6;
     /** 顶部标题占的高度（原版在顶部居中画标题）。 */
     public static final int TITLE_H = 18;
+    /** 标题与内容之间的空隙。 */
+    public static final int TOP_GAP = 4;
     public static final int TAB_GAP = 3;
-    public static final int TAB_H_MIN = 16;
+    /** 标签高度按窗口高度反推：窗口越矮标签越扁，但不会低于这个值（否则点不中）。 */
+    public static final int TAB_H_MIN = 6;
     public static final int TAB_H_MAX = 20;
-    /** 一个分页标签至少这么宽（低于它就把标签排成两行）。 */
-    public static final int TAB_MIN_W = 30;
+    /** 标签列宽度：按窗口宽度的五分之一取，夹在这个区间里。 */
+    public static final int TAB_W_MIN = 44;
+    public static final int TAB_W_MAX = 72;
+    /** 标签列与选项块之间的间隔。 */
     public static final int GAP = 8;
     public static final int BTN_GAP = 4;
     public static final int BUTTON_H = 20;
@@ -36,10 +44,11 @@ public final class ScreenLayout {
     public final int height;
     public final int rows;
     public final int tabCount;
-    public final int tabRows;
-    public final int tabsPerRow;
     public final int tabW;
     public final int tabH;
+    /** 标签列的左上角 x。 */
+    public final int tabLeft;
+    /** 第一行标签的 y；整列已垂直居中。 */
     public final int tabTop;
     public final int contentTop;
     public final int contentBottom;
@@ -64,37 +73,45 @@ public final class ScreenLayout {
         this.tabCount = Math.max(0, tabCount);
 
         int usableW = Math.max(80, width - MARGIN * 2);
-        int oneRowNeed = this.tabCount * TAB_MIN_W + Math.max(0, this.tabCount - 1) * TAB_GAP;
-        this.tabRows = this.tabCount <= 0 || usableW >= oneRowNeed ? 1 : 2;
-        this.tabsPerRow = Math.max(1, (this.tabCount + tabRows - 1) / tabRows);
-        this.tabH = clamp(height / 12, TAB_H_MIN, TAB_H_MAX);
-        this.tabTop = TITLE_H;
-        int tabsBottom = tabTop + tabRows * tabH + (tabRows - 1) * TAB_GAP;
-        this.contentTop = tabsBottom + 6;
-
+        this.contentTop = TITLE_H + TOP_GAP;
         this.buttonY = height - BOTTOM_MARGIN - BUTTON_H;
         this.statusY = buttonY - STATUS_H;
         this.contentBottom = statusY - STATUS_GAP;
 
-        this.columns = usableW >= COL_MIN_W * 2 + GAP ? 2 : 1;
+        // 标签列：宽度按窗口取档，高度均分可用高度，整列在标题与按钮行之间垂直居中。
+        this.tabW = clamp(usableW / 5, TAB_W_MIN, TAB_W_MAX);
+        int bandTop = contentTop;
+        int bandBottom = Math.max(bandTop, buttonY - TOP_GAP);
+        int band = bandBottom - bandTop;
+        this.tabH = tabCount <= 0 ? 0
+                : clamp((band - (tabCount - 1) * TAB_GAP) / tabCount, TAB_H_MIN, TAB_H_MAX);
+        int tabsH = tabCount * tabH + Math.max(0, tabCount - 1) * TAB_GAP;
+        this.tabTop = bandTop + Math.max(0, (band - tabsH) / 2);
+
+        // 选项块：标签列右边剩下的宽度，够两列就排两列。
+        int contentW = Math.max(40, usableW - tabW - GAP);
+        this.columns = contentW >= COL_MIN_W * 2 + GAP ? 2 : 1;
         this.rowsPerColumn = Math.max(1, (this.rows + columns - 1) / columns);
         int available = Math.max(ROW_H_MIN * rowsPerColumn, contentBottom - contentTop);
         this.rowH = clamp(available / rowsPerColumn, ROW_H_MIN, ROW_H_MAX);
-        this.colW = Math.min(COL_MAX_W, (usableW - (columns - 1) * GAP) / columns);
+        this.colW = Math.min(COL_MAX_W, (contentW - (columns - 1) * GAP) / columns);
         this.blockWidth = columns * colW + (columns - 1) * GAP;
-        this.blockLeft = Math.max(MARGIN, (width - blockWidth) / 2);
-        this.tabW = Math.max(20, (usableW - (tabsPerRow - 1) * TAB_GAP) / tabsPerRow);
+
+        // 标签列 + 选项块整体水平居中。
+        int group = tabW + GAP + blockWidth;
+        this.tabLeft = Math.max(MARGIN, (width - group) / 2);
+        this.blockLeft = tabLeft + tabW + GAP;
         this.buttonW = Math.max(20, (blockWidth - (BUTTON_COUNT - 1) * BTN_GAP) / BUTTON_COUNT);
     }
 
-    /** 分页标签（第 index 个）的左上角 x，自动换行。 */
-    public int tabX(int index) {
-        return MARGIN + (index % tabsPerRow) * (tabW + TAB_GAP);
+    /** 分页标签的左上角 x（所有标签共用同一列）。 */
+    public int tabX() {
+        return tabLeft;
     }
 
-    /** 分页标签（第 index 个）的左上角 y，自动换行。 */
+    /** 第 index 个分页标签的左上角 y。 */
     public int tabY(int index) {
-        return tabTop + (index / tabsPerRow) * (tabH + TAB_GAP);
+        return tabTop + index * (tabH + TAB_GAP);
     }
 
     /** 第 column 列选项的左上角 x。 */

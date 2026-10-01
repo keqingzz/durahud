@@ -4,8 +4,9 @@ import dev.emi.trinkets.api.TrinketComponent;
 import dev.emi.trinkets.api.TrinketsApi;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
+import net.minecraft.class_1657;
+import net.minecraft.class_1799;
+import net.minecraft.class_3545;
 
 /**
  * Trinkets 3.x 的连接层。<b>只有 Trinkets 已加载时</b>才会被 {@link ExtraSlots} 调用。
@@ -22,15 +23,15 @@ final class TrinketsBridge {
     private TrinketsBridge() {
     }
 
-    static List<ItemStack> collect(PlayerEntity player) {
-        List<ItemStack> stacks = new ArrayList<>();
+    static List<class_1799> collect(class_1657 player) {
+        List<class_1799> stacks = new ArrayList<>();
         TrinketComponent component = TrinketsApi.getTrinketComponent(player).orElse(null);
         if (component == null) {
             return stacks;
         }
         for (var equipped : component.getAllEquipped()) {
-            ItemStack stack = equipped.getRight();
-            if (stack != null && !stack.isEmpty()) {
+            class_1799 stack = equipped.method_15441();
+            if (stack != null && !stack.method_7960()) {
                 stacks.add(stack);
             }
         }

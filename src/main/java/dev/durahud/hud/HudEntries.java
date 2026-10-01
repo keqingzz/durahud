@@ -2,10 +2,10 @@ package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
 import java.util.List;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
+import net.minecraft.class_1657;
+import net.minecraft.class_1661;
+import net.minecraft.class_1799;
+import net.minecraft.class_310;
 
 /**
  * 当前要画的条目列表：先摆 4 个盔甲格，再摆额外装备槽（饰品），最后才是主手/副手 ——
@@ -36,10 +36,10 @@ public final class HudEntries {
 
     public HudEntries() {
         for (int i = 0; i < ORDER.length; i++) {
-            all[i] = new DurabilityEntry(ORDER[i], ItemStack.EMPTY);
+            all[i] = new DurabilityEntry(ORDER[i], class_1799.field_8037);
         }
         for (int i = 0; i < MAX_EXTRA; i++) {
-            extraEntries[i] = DurabilityEntry.extra(ItemStack.EMPTY);
+            extraEntries[i] = DurabilityEntry.extra(class_1799.field_8037);
         }
     }
 
@@ -69,23 +69,23 @@ public final class HudEntries {
      *
      * @param dtSeconds 距上一帧的秒数，交给条目推进淡入淡出
      */
-    public void refresh(MinecraftClient mc, DuraHudConfig cfg, float dtSeconds) {
-        PlayerEntity player = mc.player;
-        PlayerInventory inventory = player == null ? null : player.getInventory();
+    public void refresh(class_310 mc, DuraHudConfig cfg, float dtSeconds) {
+        class_1657 player = mc.field_1724;
+        class_1661 inventory = player == null ? null : player.method_31548();
         for (DurabilityEntry entry : all) {
-            entry.setStack(inventory == null ? ItemStack.EMPTY : stackOf(player, inventory, entry.kind()));
+            entry.setStack(inventory == null ? class_1799.field_8037 : stackOf(player, inventory, entry.kind()));
             entry.advance(dtSeconds, cfg);
         }
         int previousExtra = extraCount;
         extraCount = 0;
         if (player != null && cfg.showTrinkets) {
-            List<ItemStack> extra = ExtraSlots.collect(player);
-            for (ItemStack stack : extra) {
+            List<class_1799> extra = ExtraSlots.collect(player);
+            for (class_1799 stack : extra) {
                 if (extraCount >= MAX_EXTRA) {
                     break;
                 }
                 DurabilityEntry candidate = extraEntries[extraCount];
-                candidate.setStack(stack == null ? ItemStack.EMPTY : stack);
+                candidate.setStack(stack == null ? class_1799.field_8037 : stack);
                 candidate.advance(dtSeconds, cfg);
                 if (candidate.occupiesCell(cfg)) {
                     extraCount++;
@@ -152,14 +152,14 @@ public final class HudEntries {
         return bits;
     }
 
-    private static ItemStack stackOf(PlayerEntity player, PlayerInventory inventory, DurabilityEntry.Kind kind) {
+    private static class_1799 stackOf(class_1657 player, class_1661 inventory, DurabilityEntry.Kind kind) {
         return switch (kind) {
-            case MAINHAND -> player.getMainHandStack();
-            case OFFHAND -> player.getOffHandStack();
-            case HELMET -> inventory.getArmorStack(3);
-            case CHESTPLATE -> inventory.getArmorStack(2);
-            case LEGGINGS -> inventory.getArmorStack(1);
-            case BOOTS -> inventory.getArmorStack(0);
+            case MAINHAND -> player.method_6047();
+            case OFFHAND -> player.method_6079();
+            case HELMET -> inventory.method_7372(3);
+            case CHESTPLATE -> inventory.method_7372(2);
+            case LEGGINGS -> inventory.method_7372(1);
+            case BOOTS -> inventory.method_7372(0);
         };
     }
 }

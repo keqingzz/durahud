@@ -2,9 +2,9 @@ package dev.durahud.hud;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Identifier;
+import net.minecraft.class_2960;
+import net.minecraft.class_327;
+import net.minecraft.class_332;
 
 /**
  * 原版 GUI 图集的绘制入口。所有 UV 与尺寸都写在 {@link Metrics} 里，这里只负责画。
@@ -25,8 +25,8 @@ import net.minecraft.util.Identifier;
  */
 public final class Atlas {
 
-    public static final Identifier WIDGETS = new Identifier("textures/gui/widgets.png");
-    public static final Identifier BARS = new Identifier("textures/gui/bars.png");
+    public static final class_2960 WIDGETS = new class_2960("textures/gui/widgets.png");
+    public static final class_2960 BARS = new class_2960("textures/gui/bars.png");
 
     private Atlas() {
     }
@@ -38,9 +38,9 @@ public final class Atlas {
      * 于是「紧跟在某条耐久条后面的那个格子」会被画成不透明。这就是早期版本里
      * 「有的格子透明、有的格子实心、而且随装备变化」的原因。</p>
      */
-    public static void cellFrame(DrawContext ctx, int x, int y) {
+    public static void cellFrame(class_332 ctx, int x, int y) {
         beginTranslucent();
-        ctx.drawTexture(WIDGETS, x, y, Metrics.CELL_U, Metrics.CELL_V, Metrics.CELL_W, Metrics.CELL_H);
+        ctx.method_25302(WIDGETS, x, y, Metrics.CELL_U, Metrics.CELL_V, Metrics.CELL_W, Metrics.CELL_H);
     }
 
     /** fill() 与物品渲染会关掉或改掉混合，画任何带透明度的贴图前先把它复位。 */
@@ -49,9 +49,9 @@ public final class Atlas {
         RenderSystem.defaultBlendFunc();
     }
 
-    public static void selectionBox(DrawContext ctx, int x, int y) {
+    public static void selectionBox(class_332 ctx, int x, int y) {
         beginTranslucent();
-        ctx.drawTexture(WIDGETS, x, y, Metrics.SELECT_U, Metrics.SELECT_V, Metrics.SELECT_W, Metrics.SELECT_H);
+        ctx.method_25302(WIDGETS, x, y, Metrics.SELECT_U, Metrics.SELECT_V, Metrics.SELECT_W, Metrics.SELECT_H);
     }
 
     /** 从 5px 高的条带里取垂直居中的 h 行，避免画细条时采到上下描边。 */
@@ -60,7 +60,7 @@ public final class Atlas {
     }
 
     /** 非对称三段切片：左端帽 + 中段 + 右端帽。原图中间是纯平段，取子区域等效于拉伸。 */
-    private static void drawSliced(DrawContext ctx, Identifier texture, int x, int y,
+    private static void drawSliced(class_332 ctx, class_2960 texture, int x, int y,
                                    int w, int h, int u, int v, int fullW) {
         if (w <= 0 || h <= 0) {
             return;
@@ -69,16 +69,16 @@ public final class Atlas {
         int cr = Math.min(Metrics.CAP_RIGHT, w - cl);
         int mid = w - cl - cr;
         if (mid <= 0) {
-            ctx.drawTexture(texture, x, y, u, v, w, h);
+            ctx.method_25302(texture, x, y, u, v, w, h);
             return;
         }
-        ctx.drawTexture(texture, x, y, u, v, cl, h);
-        ctx.drawTexture(texture, x + cl, y, u + cl, v, mid, h);
-        ctx.drawTexture(texture, x + cl + mid, y, u + fullW - cr, v, cr, h);
+        ctx.method_25302(texture, x, y, u, v, cl, h);
+        ctx.method_25302(texture, x + cl, y, u + cl, v, mid, h);
+        ctx.method_25302(texture, x + cl + mid, y, u + fullW - cr, v, cr, h);
     }
 
     /** @param colorIndex bars.png 的色号 0..6  @param progress true 取「有进度」的那 5px 行 */
-    public static void bossBar(DrawContext ctx, int x, int y, int w, int h, int colorIndex, boolean progress) {
+    public static void bossBar(class_332 ctx, int x, int y, int w, int h, int colorIndex, boolean progress) {
         beginTranslucent();
         int base = colorIndex * Metrics.BAR_STEP + (progress ? Metrics.BAR_H : 0);
         drawSliced(ctx, BARS, x, y, w, h, 0, centeredV(base, h), Metrics.BAR_FULL_W);
@@ -88,7 +88,7 @@ public final class Atlas {
     // 文字预留宽度
     // ------------------------------------------------------------------
 
-    private static TextRenderer cachedFont;
+    private static class_327 cachedFont;
     private static DuraHudConfig.ValueDisplay cachedDisplay;
     private static int cachedWidth;
 
@@ -99,7 +99,7 @@ public final class Atlas {
      * <p>这个方法是几何计算的输入（{@link HudLayout#geometry}），因此它必须留在需要
      * Minecraft 字体类的这一侧，让 HudLayout 保持纯净。</p>
      */
-    public static int reserveTextWidth(TextRenderer font, DuraHudConfig.ValueDisplay display) {
+    public static int reserveTextWidth(class_327 font, DuraHudConfig.ValueDisplay display) {
         if (font == null) {
             return 0;
         }
@@ -107,8 +107,8 @@ public final class Atlas {
             return cachedWidth;
         }
         int width = switch (display) {
-            case VALUE -> Math.min(Metrics.TEXT_MAX_W, font.getWidth("9999/9999"));
-            case PERCENT -> Math.min(Metrics.TEXT_MAX_W, font.getWidth("100%"));
+            case VALUE -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("9999/9999"));
+            case PERCENT -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("100%"));
             default -> 0;
         };
         cachedFont = font;

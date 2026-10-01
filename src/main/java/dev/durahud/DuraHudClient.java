@@ -9,8 +9,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.class_304;
+import net.minecraft.class_3675;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,21 +42,21 @@ public class DuraHudClient implements ClientModInitializer {
         config = DuraHudConfig.load();
         config.save();
 
-        KeyBinding editKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.durahud.edit", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_H, "key.categories.durahud"));
-        KeyBinding configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.durahud.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, "key.categories.durahud"));
+        class_304 editKey = KeyBindingHelper.registerKeyBinding(new class_304(
+                "key.durahud.edit", class_3675.class_307.field_1668, GLFW.GLFW_KEY_H, "key.categories.durahud"));
+        class_304 configKey = KeyBindingHelper.registerKeyBinding(new class_304(
+                "key.durahud.config", class_3675.class_307.field_1668, GLFW.GLFW_KEY_K, "key.categories.durahud"));
 
         HudRenderCallback.EVENT.register((context, tickDelta) -> HudRenderer.render(context, config));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (configKey.wasPressed()) {
-                client.setScreen(new DuraHudConfigScreen(client.currentScreen));
+            while (configKey.method_1436()) {
+                client.method_1507(new DuraHudConfigScreen(client.field_1755));
             }
             // 注意 currentScreen == null 这个条件：本 HUD 的编辑模式现在是一个真实的界面
             // （光标必须被释放才能拖动），而原版只在没有界面时才更新按键状态。
-            while (editKey.wasPressed() && client.currentScreen == null) {
-                client.setScreen(new DuraHudEditScreen());
+            while (editKey.method_1436() && client.field_1755 == null) {
+                client.method_1507(new DuraHudEditScreen());
             }
         });
 

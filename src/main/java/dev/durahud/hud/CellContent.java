@@ -1,6 +1,6 @@
 package dev.durahud.hud;
 
-import net.minecraft.item.ItemStack;
+import net.minecraft.class_1799;
 
 /**
  * 一个格子「本帧要画的东西」的快照：物品图标 + 耐久条 + 数值。
@@ -11,7 +11,7 @@ import net.minecraft.item.ItemStack;
  */
 public final class CellContent {
 
-    private ItemStack stack = ItemStack.EMPTY;
+    private class_1799 stack = class_1799.field_8037;
     private boolean bar;
     private float ratio = 1.0F;
     private boolean numeric;
@@ -28,7 +28,7 @@ public final class CellContent {
         this.max = entry.max();
     }
 
-    public ItemStack stack() {
+    public class_1799 stack() {
         return stack;
     }
 

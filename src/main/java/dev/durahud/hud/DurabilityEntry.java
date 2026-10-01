@@ -1,7 +1,7 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.item.ItemStack;
+import net.minecraft.class_1799;
 
 /**
  * HUD 上的一个格子：要么属于某个固定原版槽位（盔甲/主手/副手），
@@ -35,7 +35,7 @@ public final class DurabilityEntry {
     /** null 表示这是额外装备（饰品），没有原版槽位身份。 */
     private final Kind kind;
     private final boolean armor;
-    private ItemStack stack;
+    private class_1799 stack;
     /** 本帧要画的内容快照；内容消失后保留最后一份，作为淡出用的替身。 */
     private final CellContent content = new CellContent();
     /** 淡入淡出进度 0..1（1 = 完全不透明）。 */
@@ -47,14 +47,14 @@ public final class DurabilityEntry {
     private boolean onScreen;
     private boolean onScreenNow;
 
-    public DurabilityEntry(Kind kind, ItemStack stack) {
+    public DurabilityEntry(Kind kind, class_1799 stack) {
         this.kind = kind;
         this.armor = kind != null && kind.armor;
         this.stack = stack;
     }
 
     /** 额外装备槽（Trinkets 等）里的物品。 */
-    public static DurabilityEntry extra(ItemStack stack) {
+    public static DurabilityEntry extra(class_1799 stack) {
         return new DurabilityEntry(null, stack);
     }
 
@@ -62,11 +62,11 @@ public final class DurabilityEntry {
         return kind;
     }
 
-    public ItemStack stack() {
+    public class_1799 stack() {
         return stack;
     }
 
-    public void setStack(ItemStack stack) {
+    public void setStack(class_1799 stack) {
         this.stack = stack;
     }
 
@@ -138,7 +138,7 @@ public final class DurabilityEntry {
     }
 
     public boolean isEmpty() {
-        return stack == null || stack.isEmpty();
+        return stack == null || stack.method_7960();
     }
 
     /** 是否要在这个格子里画内容（物品图标/耐久条/文字）。 */
@@ -189,15 +189,15 @@ public final class DurabilityEntry {
         if (isEmpty()) {
             return false;
         }
-        return stack.getMaxDamage() > 0 || stack.isItemBarVisible();
+        return stack.method_7936() > 0 || stack.method_31578();
     }
 
     public int max() {
-        return stack.getMaxDamage();
+        return stack.method_7936();
     }
 
     public int remaining() {
-        return Math.max(0, max() - stack.getDamage());
+        return Math.max(0, max() - stack.method_7919());
     }
 
     /** 是否能显示「剩余/上限」这种精确数值（没有耐久上限时只能显示百分比）。 */
@@ -209,17 +209,17 @@ public final class DurabilityEntry {
     public float ratio() {
         int max = max();
         if (max > 0) {
-            return clamp((float) (max - stack.getDamage()) / (float) max);
+            return clamp((float) (max - stack.method_7919()) / (float) max);
         }
-        if (stack.isItemBarVisible()) {
-            return clamp(stack.getItemBarStep() / 13.0F);
+        if (stack.method_31578()) {
+            return clamp(stack.method_31579() / 13.0F);
         }
         return 1.0F;
     }
 
     public boolean isFull() {
         int max = max();
-        return max <= 0 || stack.getDamage() <= 0;
+        return max <= 0 || stack.method_7919() <= 0;
     }
 
     private static float clamp(float value) {

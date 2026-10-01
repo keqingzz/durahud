@@ -2,9 +2,9 @@ package dev.durahud.hud;
 
 import dev.durahud.DuraHudClient;
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
+import net.minecraft.class_2561;
+import net.minecraft.class_332;
+import net.minecraft.class_437;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -20,7 +20,7 @@ import org.lwjgl.glfw.GLFW;
  *
  * <p>操作：左键拖动 / 滚轮缩放 / 方向键微调（Shift ×10）/ +- 缩放 / R 恢复默认。</p>
  */
-public class DuraHudEditScreen extends Screen {
+public class DuraHudEditScreen extends class_437 {
 
     private final DuraHudConfig cfg = DuraHudClient.config();
 
@@ -30,33 +30,33 @@ public class DuraHudEditScreen extends Screen {
     private double grabDY;
 
     public DuraHudEditScreen() {
-        super(Text.empty());
+        super(class_2561.method_43473());
     }
 
     @Override
-    protected void init() {
+    protected void method_25426() {
         cfg.editMode = true;
     }
 
     @Override
-    public void removed() {
+    public void method_25432() {
         cfg.editMode = false;
         dragging = false;
         flush();
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean method_25421() {
         return false;
     }
 
     /** 全透明：只用 HUD 自身的青色边框提示，不画任何背景。 */
     @Override
-    public void renderBackground(DrawContext context) {
+    public void method_25420(class_332 context) {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean method_25402(double mouseX, double mouseY, int button) {
         HudLayout layout = HudLayout.last();
         if (button == 0 && layout != null && layout.containsScreen(mouseX, mouseY)) {
             dragging = true;
@@ -64,36 +64,36 @@ public class DuraHudEditScreen extends Screen {
             grabDY = mouseY - layout.originY();
             return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.method_25402(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean method_25403(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (dragging) {
             moveTo(mouseX - grabDX, mouseY - grabDY);
             return true;
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        return super.method_25403(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean method_25406(double mouseX, double mouseY, int button) {
         if (dragging) {
             dragging = false;
             flush();
             return true;
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        return super.method_25406(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+    public boolean method_25401(double mouseX, double mouseY, double amount) {
         scale((float) amount * 0.05F);
         return true;
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean method_25404(int keyCode, int scanCode, int modifiers) {
         int step = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
         switch (keyCode) {
             case GLFW.GLFW_KEY_LEFT -> nudge(-step, 0);
@@ -109,9 +109,9 @@ public class DuraHudEditScreen extends Screen {
                 cfg.scale = 1.0F;
                 cfg.save();
             }
-            case GLFW.GLFW_KEY_H -> close();
+            case GLFW.GLFW_KEY_H -> method_25419();
             default -> {
-                return super.keyPressed(keyCode, scanCode, modifiers);
+                return super.method_25404(keyCode, scanCode, modifiers);
             }
         }
         return true;

@@ -1,15 +1,14 @@
 package dev.durahud.config;
 
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.text.Text;
-
 import java.util.function.DoubleConsumer;
+import net.minecraft.class_2561;
+import net.minecraft.class_357;
 
 /**
  * 数值滑条：滑条位置是 0..1，显示值线性映射到 [min, max]；整数模式四舍五入，
  * 否则保留两位小数。autoAtZero 时值 <= 0 显示成"自动"（耐久条长度用）。
  */
-final class NumberSliderWidget extends SliderWidget {
+final class NumberSliderWidget extends class_357 {
 
     private final String labelKey;
     private final double min;
@@ -22,7 +21,7 @@ final class NumberSliderWidget extends SliderWidget {
     NumberSliderWidget(int x, int y, int width, int height, String labelKey, double min, double max,
                        double value, boolean integer, boolean autoAtZero,
                        DoubleConsumer setter, Runnable onCommit) {
-        super(x, y, width, height, Text.empty(),
+        super(x, y, width, height, class_2561.method_43473(),
                 max > min ? (Math.max(min, Math.min(max, value)) - min) / (max - min) : 0.0D);
         this.labelKey = labelKey;
         this.min = min;
@@ -31,29 +30,29 @@ final class NumberSliderWidget extends SliderWidget {
         this.autoAtZero = autoAtZero;
         this.setter = setter;
         this.onCommit = onCommit;
-        updateMessage();
+        method_25346();
     }
 
     private double actual() {
-        double raw = min + (max - min) * this.value;
+        double raw = min + (max - min) * this.field_22753;
         return integer ? Math.round(raw) : Math.round(raw * 100.0D) / 100.0D;
     }
 
     @Override
-    protected void updateMessage() {
+    protected void method_25346() {
         if (this.labelKey == null) {
             return;
         }
         double current = actual();
         if (autoAtZero && current <= 0.0D) {
-            setMessage(Text.translatable(this.labelKey).append(": ").append(Text.translatable("durahud.value.auto")));
+            method_25355(class_2561.method_43471(this.labelKey).method_27693(": ").method_10852(class_2561.method_43471("durahud.value.auto")));
             return;
         }
-        setMessage(Text.translatable(this.labelKey).append(": " + (integer ? String.valueOf((long) current) : String.valueOf(current))));
+        method_25355(class_2561.method_43471(this.labelKey).method_27693(": " + (integer ? String.valueOf((long) current) : String.valueOf(current))));
     }
 
     @Override
-    protected void applyValue() {
+    protected void method_25344() {
         if (this.setter != null) {
             this.setter.accept(actual());
         }
