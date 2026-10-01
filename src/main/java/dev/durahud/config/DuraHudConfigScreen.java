@@ -278,6 +278,10 @@ public class DuraHudConfigScreen extends class_437 {
 
     @Override
     public void method_25394(class_332 ctx, int mouseX, int mouseY, float delta) {
+        // 原版每个界面都在自己的 render 开头调这句：Screen.render 只把 drawables 画一遍，
+        // 不画背景（javap 实测，见 README 9.14）。少了它，从 Mod Menu / 标题界面进来时
+        // 背后是透的，文字压在游戏画面上根本看不清。
+        this.method_25420(ctx);
         super.method_25394(ctx, mouseX, mouseY, delta);
         if (layout == null) {
             return;

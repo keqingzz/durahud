@@ -100,8 +100,10 @@ public final class HudRenderer {
         boolean visible = entry.visible(cfg);
         float alpha = FadeState.alpha(entry.fade(), cfg.animateCells);
         if (cfg.showSlotFrames && (visible || cfg.showEmptySlots)) {
-            // 盔甲格恒定实心：空盔甲格与「刚戴上头盔」之间不该闪一下边框。
-            float frameAlpha = entry.armor() ? 1.0F : alpha;
+            // 盔甲格边框：开着「空槽位边框」时，空盔甲格是一个常驻占位，边框就一直实心
+            // （否则刚脱下头盔时边框会闪一下）；关掉它时空盔甲格会整格淡出，边框必须跟着
+            // 内容一起淡 —— 不然脱下盔甲会在原地留一个空心方框（旧版恒定 1.0 就是这么来的）。
+            float frameAlpha = entry.armor() && cfg.showEmptySlots ? 1.0F : alpha;
             pushAlpha(ctx, frameAlpha);
             Atlas.cellFrame(ctx, 0, 0);
             popAlpha(ctx, frameAlpha);

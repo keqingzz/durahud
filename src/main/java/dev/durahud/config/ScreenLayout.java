@@ -3,8 +3,9 @@ package dev.durahud.config;
 /**
  * 设置界面的布局计算：左侧竖排分页标签 + 选项列 + 底部按钮行，全部由当前窗口尺寸推出。
  *
- * <p>标签是一列竖排的按钮，整列在标题与底部按钮之间垂直居中；标签列右边是选项块，
- * 标签列 + 间隔 + 选项块作为一个整体在窗口里水平居中，所以标签总是落在屏幕中央偏左的位置。</p>
+ * <p>标签是一列竖排的按钮，标签列右边是选项块，两者都在「标题下沿到提示行上沿」这段高度里
+ * 垂直居中，所以二级菜单不会挤在顶上，而是与左侧六个分页标签齐平。标签列 + 间隔 + 选项块
+ * 作为一个整体在窗口里水平居中，所以标签总是落在屏幕中央偏左的位置。</p>
  *
  * <p>纯数学、零 Minecraft 引用，所以可以用单测覆盖「GUI 缩放拉到最大」这类极端尺寸
  * （见 {@code ScreenLayoutTest}）：只要窗口还进得去游戏，控件就必须留在屏幕里 —— 这正是
@@ -56,6 +57,8 @@ public final class ScreenLayout {
     public final int colW;
     public final int rowsPerColumn;
     public final int rowH;
+    /** 选项块第一行的 y；整块已在这段高度里垂直居中，与标签列齐平。 */
+    public final int rowsTop;
     public final int blockLeft;
     public final int blockWidth;
     public final int buttonY;
@@ -78,22 +81,24 @@ public final class ScreenLayout {
         this.statusY = buttonY - STATUS_H;
         this.contentBottom = statusY - STATUS_GAP;
 
-        // 标签列：宽度按窗口取档，高度均分可用高度，整列在标题与按钮行之间垂直居中。
+        // 内容带：标题下沿到提示行上沿。标签列与选项块都在这段高度里垂直居中，
+        // 于是二级菜单（选项行）与左侧六大标签在视觉上齐平。
+        int band = Math.max(0, contentBottom - contentTop);
+
+        // 标签列：宽度按窗口取档，高度由内容带均分，整列居中。
         this.tabW = clamp(usableW / 5, TAB_W_MIN, TAB_W_MAX);
-        int bandTop = contentTop;
-        int bandBottom = Math.max(bandTop, buttonY - TOP_GAP);
-        int band = bandBottom - bandTop;
         this.tabH = tabCount <= 0 ? 0
                 : clamp((band - (tabCount - 1) * TAB_GAP) / tabCount, TAB_H_MIN, TAB_H_MAX);
         int tabsH = tabCount * tabH + Math.max(0, tabCount - 1) * TAB_GAP;
-        this.tabTop = bandTop + Math.max(0, (band - tabsH) / 2);
+        this.tabTop = contentTop + Math.max(0, (band - tabsH) / 2);
 
-        // 选项块：标签列右边剩下的宽度，够两列就排两列。
+        // 选项块：标签列右边剩下的宽度，够两列就排两列；行高按内容带均分，整块同样居中。
         int contentW = Math.max(40, usableW - tabW - GAP);
         this.columns = contentW >= COL_MIN_W * 2 + GAP ? 2 : 1;
         this.rowsPerColumn = Math.max(1, (this.rows + columns - 1) / columns);
-        int available = Math.max(ROW_H_MIN * rowsPerColumn, contentBottom - contentTop);
-        this.rowH = clamp(available / rowsPerColumn, ROW_H_MIN, ROW_H_MAX);
+        this.rowH = clamp(Math.max(ROW_H_MIN * rowsPerColumn, band) / rowsPerColumn,
+                ROW_H_MIN, ROW_H_MAX);
+        this.rowsTop = contentTop + Math.max(0, (band - rowsPerColumn * rowH) / 2);
         this.colW = Math.min(COL_MAX_W, (contentW - (columns - 1) * GAP) / columns);
         this.blockWidth = columns * colW + (columns - 1) * GAP;
 
@@ -153,7 +158,7 @@ public final class ScreenLayout {
 
     /** 第 index 个选项的左上角 y。 */
     public int rowY(int index) {
-        return contentTop + rowOf(index) * rowH;
+        return rowsTop + rowOf(index) * rowH;
     }
 
     /** 底部第 index 个按钮的左上角 x。 */
