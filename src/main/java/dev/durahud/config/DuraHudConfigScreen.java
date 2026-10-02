@@ -90,6 +90,7 @@ public class DuraHudConfigScreen extends class_437 {
         widgets.clear();
         wornNonDurableRow = -1;
         animationRow = -1;
+        critRow = -1;
         critSlider = null;
         buildPage();
 
@@ -100,10 +101,25 @@ public class DuraHudConfigScreen extends class_437 {
             widgets.add(widget);
             method_37063(widget);
         }
-        critSlider = critRow >= 0 ? (NumberSliderWidget) widgets.get(critRow) : null;
+        critSlider = sliderAt(critRow);
         addTabs();
         addBottomButtons();
         refreshDependencies();
+    }
+
+    /**
+     * 按下标取一行控件，并确认它真是滑条。
+     *
+     * <p>行号只在同一次 {@link #buildPage()} 里有效：换页之后同一个下标可能落在按钮上，
+     * 直接强转会抛 {@code ClassCastException} 把游戏崩掉，2.1.2 修的就是这个。
+     * 这里既查范围也判类型，最坏情况只是拿不到滑条、crit 的显示不同步。</p>
+     */
+    private NumberSliderWidget sliderAt(int row) {
+        if (row < 0 || row >= widgets.size()) {
+            return null;
+        }
+        class_339 widget = widgets.get(row);
+        return widget instanceof NumberSliderWidget slider ? slider : null;
     }
 
     /** 改动先只标脏：{@link #method_25432()} 里统一夹取并落盘。 */
