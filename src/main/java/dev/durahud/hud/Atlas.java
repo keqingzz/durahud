@@ -89,35 +89,31 @@ public final class Atlas {
     // ------------------------------------------------------------------
 
     private static class_327 cachedFont;
-    private static DuraHudConfig.ValueDisplay cachedDisplay;
     private static int cachedWidth;
 
     /**
-     * 预留的文本宽度是<b>常量</b>，不随当前数字长短变化 —— 否则数字从 "9" 变到 "240"
-     * 就会改变格子间距、把整排格子推走。用最宽的样本测量，并按字体与显示模式缓存。
+     * 数值槽位的预留宽度：取 {@link Metrics#TEXT_SAMPLES} 里最宽样本的宽度。
      *
-     * <p>VALUE 模式的「剩余」与「上限」是<b>上下两行</b>（见 {@link CellLabel#secondLine}），
-     * 所以这里按<b>一个</b>四位数预留 —— 旧版本拼成 "9999/9999" 一行，一个格子要按
-     * 9 个字符留宽度，横向排列时格子间距会宽出一大截。</p>
+     * <p>它<b>只是字体</b>的函数，与当前是 VALUE、PERCENT 还是关掉无关——预留宽度一旦跟着
+     * 显示模式变，切一次模式就会改变格子的横向步距，把整排格子推走。显示模式只决定槽位里画
+     * 几个字、画在哪，不决定槽位本身有多大（见 README 10 节）。</p>
      *
      * <p>这个方法是几何计算的输入（{@link HudLayout#geometry}），因此它必须留在需要
      * Minecraft 字体类的这一侧，让 HudLayout 保持纯净。</p>
      */
-    public static int reserveTextWidth(class_327 font, DuraHudConfig.ValueDisplay display) {
+    public static int reserveTextWidth(class_327 font) {
         if (font == null) {
             return 0;
         }
-        if (font == cachedFont && display == cachedDisplay) {
+        if (font == cachedFont) {
             return cachedWidth;
         }
-        int width = switch (display) {
-            case VALUE -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("9999"));
-            case PERCENT -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("100%"));
-            default -> 0;
-        };
+        int widest = 0;
+        for (String sample : Metrics.TEXT_SAMPLES) {
+            widest = Math.max(widest, font.method_1727(sample));
+        }
         cachedFont = font;
-        cachedDisplay = display;
-        cachedWidth = width;
-        return width;
+        cachedWidth = Math.min(Metrics.TEXT_MAX_W, widest);
+        return cachedWidth;
     }
 }

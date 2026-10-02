@@ -56,7 +56,7 @@ public final class HudRenderer {
         }
         HudLayout layout = HudLayout.geometry(cfg, ENTRIES.count(),
                 mc.method_22683().method_4486(), mc.method_22683().method_4502(),
-                Atlas.reserveTextWidth(mc.field_1772, cfg.valueDisplay));
+                Atlas.reserveTextWidth(mc.field_1772));
         drawCells(ctx, mc, cfg, layout, dtSeconds);
         ENTRIES.commitPlacement();
         if (cfg.editMode) {
@@ -256,11 +256,14 @@ public final class HudRenderer {
         // 标签与字宽都由 CellContent 缓存：数字没变的帧既不拼字符串、也不量字形宽度。
         // VALUE 模式是两行（剩余 / 上限），两行在同一次 label(...) 里一起刷好，行距一行高。
         String label = content.label(cfg, mc.field_1772);
+        String second = content.secondLabel();
+        // 槽位高度固定为两行：只有一行时让它落在槽位正中（VALUE 是两行，第一行顶格）——
+        // 切显示模式时格子不动，数字自己在槽位里换位置。
+        int firstLineY = layout.textOffsetY() + (second.isEmpty() ? layout.singleLineOffset() : 0);
         if (!label.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, label,
-                    layout.textOffsetX(content.labelWidth()), layout.textOffsetY(), severity.textColor);
+                    layout.textOffsetX(content.labelWidth()), firstLineY, severity.textColor);
         }
-        String second = content.secondLabel();
         if (!second.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, second,
                     layout.textOffsetX(content.secondLabelWidth()),

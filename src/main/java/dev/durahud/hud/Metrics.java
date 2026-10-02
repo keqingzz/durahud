@@ -65,6 +65,13 @@ public final class Metrics {
     public static final int TEXT_H = 9;
     /** 单条文字的最大预留宽度，防止超长文本把格子推得到处都是。 */
     public static final int TEXT_MAX_W = 64;
+    /**
+     * 数值槽位的宽度样本：VALUE 模式是四位数，PERCENT 模式是 "100%"。
+     *
+     * <p>预留宽度取所有样本里<b>最宽</b>的那一个，与当前显示模式无关——跟着模式变的预留宽度
+     * 会改变格子间距、把整排格子推走（见 README 10 节）。</p>
+     */
+    public static final String[] TEXT_SAMPLES = {"9999", "100%"};
     /** 纵向排列时耐久条的默认长度（横向时用格子宽度）。 */
     public static final int AUTO_SIDE_BAR = 60;
     /** 耐久条的最小长度，再短就只剩两个端帽了。 */

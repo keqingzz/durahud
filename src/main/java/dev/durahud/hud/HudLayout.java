@@ -4,7 +4,6 @@ import dev.durahud.config.DuraHudConfig;
 import dev.durahud.config.DuraHudConfig.Anchor;
 import dev.durahud.config.DuraHudConfig.BarSide;
 import dev.durahud.config.DuraHudConfig.Orientation;
-import dev.durahud.config.DuraHudConfig.ValueDisplay;
 import dev.durahud.config.DuraHudConfig.ValuePlacement;
 
 /**
@@ -58,9 +57,9 @@ public final class HudLayout {
      * @param cellCount 这一帧有几个格子（见 {@link HudEntries#count()}）
      * @param viewW     缩放后的窗口宽度（{@code mc.getWindow().getScaledWidth()}）
      * @param viewH     缩放后的窗口高度
-     * @param textWidth 为文字预留的宽度；0 表示不显示文字（见 {@link Atlas#reserveTextWidth}）。
-     *                  文字<b>高度</b>不用传：它由 {@link #textHeight(DuraHudConfig)} 按显示模式算
-     *                  （VALUE 模式是「剩余」「上限」两行）
+     * @param textWidth 为数值槽位预留的宽度；0 表示没有槽位（见 {@link Atlas#reserveTextWidth}）。
+     *                  它只由字体决定，与显示模式无关；槽位的<b>高度</b>也不用传，固定两行
+     *                  （见 {@link #textHeight()}）
      */
     public static HudLayout geometry(DuraHudConfig cfg, int cellCount, int viewW, int viewH, int textWidth) {
         INSTANCE.rebuild(cfg, cellCount, viewW, viewH, textWidth);
@@ -86,7 +85,10 @@ public final class HudLayout {
         textSide = textWidth > 0
                 ? (cfg.valuePlacement == ValuePlacement.AUTO ? opposite(barSide) : toSide(cfg.valuePlacement))
                 : null;
-        textBlockH = textHeight(cfg);
+        // 槽位高度也是常量：永远按最宽的情形（VALUE 的「剩余」+「上限」两行）留。高度要是
+        // 跟着显示模式变，贴着上下边的数值就会把整排格子推上推下——与「预留宽度是常量」
+        // 同一条纪律。
+        textBlockH = Metrics.TEXT_H * 2;
 
         // 各方向的「附着深度」：同侧时先放条、再放文本，顺次排开
         int above = 0;
@@ -316,25 +318,40 @@ public final class HudLayout {
     }
 
     /**
-     * 数值文字这一块的高度：VALUE 模式是「剩余」「上限」两行，其它模式一行。
+     * 数值槽位的高度：永远是两行（VALUE 的「剩余」+「上限」）。
      *
-     * <p>这是按显示模式固定的<b>常量</b>，不是「这一格实际画了几行」：只有百分比可显示的物品
-     * 不能让整块 HUD 忽高忽低 —— 与「预留宽度是常量」同一条纪律（见 README 10 节）。
+     * <p>它是<b>常量</b>，也与显示模式无关：槽位高度按模式变，贴着上下边的数值就会把整排
+     * 格子推上推下（与「预留宽度是常量」同一条纪律，见 README 10 节）。
      * 渲染侧按它决定第二行画在哪（{@code textOffsetY() + Metrics.TEXT_H}）。</p>
      */
     public int textHeight() {
         return textBlockH;
     }
 
-    /** 数值相对格子原点的横向偏移；LEFT 用<b>预留宽度</b>而不是实际字宽，数字长短不会让文字抖动。 */
+    /**
+     * 只画一行时，这一行在<b>两行高</b>槽位里的纵向偏移：居中。
+     *
+     * <p>于是切换显示模式时格子与整块 HUD 都不动，只有槽位里的数字自己换位置。</p>
+     */
+    public int singleLineOffset() {
+        return (textBlockH - Metrics.TEXT_H + 1) / 2;
+    }
+
+    /**
+     * 数值相对格子原点的横向偏移。
+     *
+     * <p>槽位宽度是固定的 {@link #textWidth()}，数字按自己的实际宽度在槽位里<b>居中</b>：
+     * 左右两侧（LEFT / RIGHT）和上下两侧一样，都只在槽位内部挪，不会因为数字位数或显示模式
+     * 变了就把格子推走——换模式时格子的位置应当一模一样。</p>
+     */
     public int textOffsetX(int labelWidth) {
         if (textSide == null) {
             return 0;
         }
         return switch (textSide) {
             case ABOVE, BELOW -> (Metrics.CELL_W - labelWidth) / 2;
-            case LEFT -> -textSkip - Metrics.TEXT_GAP - textWidth;
-            default -> Metrics.CELL_W + textSkip + Metrics.TEXT_GAP;
+            case LEFT -> -textSkip - Metrics.TEXT_GAP - textWidth + (textWidth - labelWidth) / 2;
+            default -> Metrics.CELL_W + textSkip + Metrics.TEXT_GAP + (textWidth - labelWidth) / 2;
         };
     }
 
@@ -399,15 +416,6 @@ public final class HudLayout {
         boolean horizontal = cfg.barPlacement == BarSide.ABOVE || cfg.barPlacement == BarSide.BELOW;
         int raw = cfg.barLength > 0 ? cfg.barLength : (horizontal ? Metrics.CELL_W : Metrics.AUTO_SIDE_BAR);
         return Math.max(Metrics.BAR_MIN, Math.min(Metrics.BAR_FULL_W, raw));
-    }
-
-    /**
-     * 数值文字的高度：VALUE 模式要留「剩余」+「上限」两行，其余模式一行。
-     *
-     * <p>纯算术、只看配置，所以几何层不依赖 Minecraft 也能算出文字块的尺寸。</p>
-     */
-    static int textHeight(DuraHudConfig cfg) {
-        return cfg.valueDisplay == ValueDisplay.VALUE ? Metrics.TEXT_H * 2 : Metrics.TEXT_H;
     }
 
     static BarSide opposite(BarSide side) {
