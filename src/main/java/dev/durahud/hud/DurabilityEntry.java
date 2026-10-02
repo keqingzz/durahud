@@ -42,6 +42,8 @@ public final class DurabilityEntry {
     private final CellContent outgoing = new CellContent();
     /** 同一格里换了别的东西时的过渡：两份内容各推进一格，边走边交叉淡入淡出。 */
     private final SwapState swap = new SwapState();
+    /** 距上一次换物的秒数（每帧累加）；连续切换时用它把过渡缩短，好让上一件停得住（见 {@link SwapPacing}）。 */
+    private float sinceSwapSeconds = Float.POSITIVE_INFINITY;
     /** 淡入淡出进度 0..1（1 = 完全不透明）。 */
     private float fade;
     /** 本帧的绘制位置（缩放后的屏幕坐标），平滑移动的中间量。 */
@@ -149,49 +151,85 @@ public final class DurabilityEntry {
      * <p>过渡途中又换了一次（连续切换工具/装备）时<b>不重播</b>：进度、位移与离场的那份都
      * 原地不动，新物品接手进场层并限时收尾（见 {@link SwapState#hurryTo(int)}）。</p>
      *
+     * <p>连续切换也不能「到位就被顶走」：本次过渡时长交给 {@link SwapPacing}，按距上次换物的
+     * 时间缩到「上一件在格心停得住」的长度。间隔够宽时仍是完整的 {@code animationMillis} ——
+     * 配置项在这里是上限。</p>
+     *
      * @param dtSeconds 距上一帧的秒数（由渲染器给出；停帧或长时间暂停后传 0，动画就停在原地）
      */
     public void advance(float dtSeconds, DuraHudConfig cfg) {
         boolean filled = hasContents(cfg);
+        if (dtSeconds > 0.0F) {
+            sinceSwapSeconds += dtSeconds;   // NaN 与负数都当「这一帧没动」
+        }
 
         if (!cfg.animateCells) {
-            swap.clear();
-            if (filled) {
-                content.capture(this, cfg, dtSeconds);
-            }
-            fade = filled ? 1.0F : 0.0F;
+            advanceInstant(filled, cfg, dtSeconds);
             return;
         }
 
         if (!filled) {
-            // 东西没了：快照不再刷新（最后一份自然成了淡出用的替身），但正在进行的换物过渡
-            // 照常走完 —— 半路掐断会让已经推进到一半的进场内容突然弹回原位、不透明度跳回 1。
-            if (swap.active() && swap.advance(dtSeconds)) {
-                swap.clear();
-            }
+            advanceEmpty(dtSeconds);
         } else if (!swap.active()) {
-            // 格子还在淡入淡出的半路上时就别插一脚：那点时间本来就短，交给 fade 管更干净。
-            if (sameContentAsCurrent() || fade < 1.0F) {
-                content.capture(this, cfg, dtSeconds);
-            } else {
-                outgoing.copyFrom(content);   // 现在这份内容留作离场的替身
-                swap.begin(cfg.animationMillis);
-                content.capture(this, cfg, dtSeconds);   // 新内容立刻接手：它在上一格的位置
-            }
+            advanceSettled(cfg, dtSeconds);
         } else {
-            if (!sameContentAsCurrent()) {
-                // 过渡途中又换了一次：<b>不重播</b>。离场那份照旧接着走、进度与位移都原地不动，
-                // 新物品直接接手「正在进场」的那一层（位置与不透明度连续，不跳），只是把剩下
-                // 这段路限时收尾 —— 否则动画时长一大，每换一次都要从头飘一遍，手感就是「卡住」。
-                swap.hurryTo(interruptMillis(cfg));
-            }
-            content.capture(this, cfg, dtSeconds);
-            if (swap.advance(dtSeconds)) {
-                swap.clear();   // 走完这一帧画出来就是静止态（位移归位、不透明度各就各位）
-            }
+            advanceSwapping(cfg, dtSeconds);
         }
 
         fade = FadeState.approach(fade, filled ? 1.0F : 0.0F, dtSeconds, cfg.animationMillis);
+    }
+
+    /** 关掉动画时的一帧到位：没有过渡、没有加减速，内容直接刷新。 */
+    private void advanceInstant(boolean filled, DuraHudConfig cfg, float dtSeconds) {
+        swap.clear();
+        if (filled) {
+            content.capture(this, cfg, dtSeconds);
+        }
+        fade = filled ? 1.0F : 0.0F;
+    }
+
+    /**
+     * 东西没了：快照不再刷新（最后一份自然成了淡出用的替身），但正在进行的换物过渡照常走完 ——
+     * 半路掐断会让已经推进到一半的进场内容突然弹回原位、不透明度跳回 1。
+     */
+    private void advanceEmpty(float dtSeconds) {
+        if (swap.active() && swap.advance(dtSeconds)) {
+            swap.clear();
+        }
+    }
+
+    /**
+     * 没有过渡在进行：默认就地刷新快照（掉耐久、换显示模式都走这里）；只有当快照里画的是
+     * <b>另一种物品</b>时才启动一次换物过渡 —— 现在这份内容留作离场的替身，新内容立刻接手。
+     */
+    private void advanceSettled(DuraHudConfig cfg, float dtSeconds) {
+        // 格子还在淡入淡出的半路上时就别插一脚：那点时间本来就短，交给 fade 管更干净。
+        if (sameContentAsCurrent() || fade < 1.0F) {
+            content.capture(this, cfg, dtSeconds);
+            return;
+        }
+        outgoing.copyFrom(content);   // 现在这份内容留作离场的替身
+        // 刚才换过一次就别再慢慢滑：把时长压到「上一件停得够久」的长度 —— 否则间隔正好等于
+        // 动画时长时，前一件到位的那一帧就被顶走，看不出它到过位（见 SwapPacing）。
+        swap.begin(SwapPacing.duration(cfg.animationMillis, sinceSwapSeconds));
+        sinceSwapSeconds = 0.0F;
+        content.capture(this, cfg, dtSeconds);   // 新内容立刻接手：它在上一格的位置
+    }
+
+    /**
+     * 过渡进行中：又换了一次就<b>不重播</b>。离场那份照旧接着走、进度与位移都原地不动，新物品
+     * 直接接手「正在进场」的那一层（位置与不透明度连续，不跳），只是把剩下这段路限时收尾 ——
+     * 否则动画时长一大，每换一次都要从头飘一遍，手感就是「卡住」。
+     */
+    private void advanceSwapping(DuraHudConfig cfg, float dtSeconds) {
+        if (!sameContentAsCurrent()) {
+            swap.hurryTo(interruptMillis(cfg));
+            sinceSwapSeconds = 0.0F;   // 这也是一次换物：下一次的时长从这里重新算
+        }
+        content.capture(this, cfg, dtSeconds);
+        if (swap.advance(dtSeconds)) {
+            swap.clear();   // 走完这一帧画出来就是静止态（位移归位、不透明度各就各位）
+        }
     }
 
     /**
@@ -220,12 +258,12 @@ public final class DurabilityEntry {
         return drawn.method_7909() == stack.method_7909();
     }
 
-    public boolean isEmpty() {
+    boolean isEmpty() {
         return stack == null || stack.method_7960();
     }
 
-    /** 是否要在这个格子里画内容（物品图标/耐久条/文字）。 */
-    public boolean hasContents(DuraHudConfig cfg) {
+    /** 是否要在这个格子里画内容（物品图标/耐久条/文字）。包内可见：只给本包与 {@link CellContent} 用。 */
+    boolean hasContents(DuraHudConfig cfg) {
         if (isEmpty()) {
             return false;
         }
@@ -267,29 +305,29 @@ public final class DurabilityEntry {
         return armor || kind == null;
     }
 
-    /** 有耐久度（可损坏）或物品自带小耐久条。 */
-    public boolean hasWear() {
+    /** 有耐久度（可损坏）或物品自带小耐久条。包内可见：只有 {@link CellContent} 的快照要用。 */
+    boolean hasWear() {
         if (isEmpty()) {
             return false;
         }
         return stack.method_7936() > 0 || stack.method_31578();
     }
 
-    public int max() {
+    int max() {
         return stack.method_7936();
     }
 
-    public int remaining() {
+    int remaining() {
         return Math.max(0, max() - stack.method_7919());
     }
 
     /** 是否能显示「剩余/上限」这种精确数值（没有耐久上限时只能显示百分比）。 */
-    public boolean hasNumeric() {
+    boolean hasNumeric() {
         return max() > 0;
     }
 
     /** 0..1 的剩余比例；没有耐久上限时退回物品自带小条（13 步）。 */
-    public float ratio() {
+    float ratio() {
         int max = max();
         if (max > 0) {
             return clamp((float) (max - stack.method_7919()) / (float) max);
@@ -300,7 +338,7 @@ public final class DurabilityEntry {
         return 1.0F;
     }
 
-    public boolean isFull() {
+    boolean isFull() {
         int max = max();
         return max <= 0 || stack.method_7919() <= 0;
     }

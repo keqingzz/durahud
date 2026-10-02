@@ -45,13 +45,8 @@ public final class HudRenderer {
 
     public static void render(class_332 ctx, DuraHudConfig cfg) {
         class_310 mc = class_310.method_1551();
-        if (!cfg.enabled || mc.field_1724 == null || mc.field_1690.field_1842) {
-            if (!cfg.editMode) {
-                return;
-            }
-            // 编辑模式是例外：H 键界面只能在游戏里打开，但那时 HUD 可能被关掉或被 F1 隐藏。
-            // 这里继续往下走一遍几何，否则编辑界面上根本没有外框，HudLayout.last() 还会停留在
-            // 上一次的陈旧几何（换过窗口尺寸后拖动就对不齐）。ENTRIES.refresh 对 null 玩家是安全的。
+        if (!shouldDraw(mc, cfg)) {
+            return;
         }
         float dtSeconds = frameSeconds();
         ENTRIES.refresh(mc, cfg, dtSeconds);
@@ -59,32 +54,58 @@ public final class HudRenderer {
             ENTRIES.commitPlacement();
             return;
         }
-        int textWidth = Atlas.reserveTextWidth(mc.field_1772, cfg.valueDisplay);
         HudLayout layout = HudLayout.geometry(cfg, ENTRIES.count(),
-                mc.method_22683().method_4486(), mc.method_22683().method_4502(), textWidth);
+                mc.method_22683().method_4486(), mc.method_22683().method_4502(),
+                Atlas.reserveTextWidth(mc.field_1772, cfg.valueDisplay));
+        drawCells(ctx, mc, cfg, layout, dtSeconds);
+        ENTRIES.commitPlacement();
+        if (cfg.editMode) {
+            drawEditOverlay(ctx, layout);
+        }
+    }
 
-        // 逐格矩阵：每格在自己的变换里画，位置由条目给出（含平滑移动的中间量）。
-        // 自动补位时原点与格子序号会一起变，只有逐格算位置才能让每格从旧位置滑到新位置。
+    /**
+     * 编辑模式是例外：H 键界面只能在游戏里打开，但那时 HUD 可能被关掉或被 F1 隐藏。这种情况下
+     * 仍然往下走一遍几何，否则编辑界面上根本没有外框，HudLayout.last() 还会停留在上一次的陈旧
+     * 几何（换过窗口尺寸后拖动就对不齐）。{@code ENTRIES.refresh} 对 null 玩家是安全的。
+     */
+    private static boolean shouldDraw(class_310 mc, DuraHudConfig cfg) {
+        if (cfg.editMode) {
+            return true;
+        }
+        return cfg.enabled && mc.field_1724 != null && !mc.field_1690.field_1842;
+    }
+
+    /**
+     * 逐格矩阵：每格在自己的 {@code push/translate/scale/pop} 里画，位置由条目给出（含平滑移动的
+     * 中间量）。自动补位时原点与格子序号会一起变，只有逐格算位置才能让每格从旧位置滑到新位置。
+     */
+    private static void drawCells(class_332 ctx, class_310 mc, DuraHudConfig cfg,
+                                  HudLayout layout, float dtSeconds) {
         float scale = layout.scale();
-        for (int i = 0; i < ENTRIES.count(); i++) {
+        float originX = layout.originX();
+        float originY = layout.originY();
+        int count = ENTRIES.count();
+        for (int i = 0; i < count; i++) {
             DurabilityEntry entry = ENTRIES.get(i);
-            entry.slideTo(layout.originX() + layout.cellLocalX(i) * scale,
-                    layout.originY() + layout.cellLocalY(i) * scale, dtSeconds, cfg);
+            entry.slideTo(originX + layout.cellLocalX(i) * scale,
+                    originY + layout.cellLocalY(i) * scale, dtSeconds, cfg);
             ctx.method_51448().method_22903();
             ctx.method_51448().method_46416(entry.drawX(), entry.drawY(), 0.0F);
             ctx.method_51448().method_22905(scale, scale, 1.0F);
             drawEntry(ctx, mc, cfg, layout, entry);
             ctx.method_51448().method_22909();
         }
-        ENTRIES.commitPlacement();
-        if (cfg.editMode) {
-            // 外框围的是整块 HUD：整排一起滑完之后按当前几何画。
-            ctx.method_51448().method_22903();
-            ctx.method_51448().method_46416((float) layout.originX(), (float) layout.originY(), 0.0F);
-            ctx.method_51448().method_22905(scale, scale, 1.0F);
-            drawEditBorder(ctx, layout.localW(), layout.localH());
-            ctx.method_51448().method_22909();
-        }
+    }
+
+    /** 外框围的是整块 HUD：整排一起滑完之后按当前几何画。 */
+    private static void drawEditOverlay(class_332 ctx, HudLayout layout) {
+        float scale = layout.scale();
+        ctx.method_51448().method_22903();
+        ctx.method_51448().method_46416((float) layout.originX(), (float) layout.originY(), 0.0F);
+        ctx.method_51448().method_22905(scale, scale, 1.0F);
+        drawEditBorder(ctx, layout.localW(), layout.localH());
+        ctx.method_51448().method_22909();
     }
 
     /**
@@ -124,30 +145,51 @@ public final class HudRenderer {
             return;
         }
         // 格子的淡入淡出 × 换物过渡：两层不透明度相乘（没有过渡时后一项恒为 1）。
-        // 换物过渡：两份内容各推一格、交叉淡入淡出（见 SwapState）。位移用几何层的步距
-        // （缩放前的像素），所以缩放多少就走多少；没有过渡时只有一份内容，就地画。
-        boolean horizontal = cfg.orientation == DuraHudConfig.Orientation.HORIZONTAL;
-        int pitch = horizontal ? layout.pitchX() : layout.pitchY();
         SwapState swap = entry.swap();
         if (swap.active()) {
-            // 只有<b>图标层</b>推一格、交叉淡入淡出：旧图标往下一格走、新图标从上一格进来。
-            drawShiftedIcon(ctx, cfg, entry.outgoing(), swap.outgoingAlpha(), swap.outgoingShift(),
-                    horizontal, pitch, alpha);
-            drawShiftedIcon(ctx, cfg, entry.content(), swap.incomingAlpha(), swap.incomingShift(),
-                    horizontal, pitch, alpha);
-            // 仪表层（耐久条 + 数值）不参与过渡：定在原地，也不跟着交叉淡化 ——
-            // 切换工具时变的只是条的长度与数字（CellContent 的加减动画）。
-            pushAlpha(ctx, alpha);
-            drawGaugeLayer(ctx, mc, cfg, layout, entry.content());
-            popAlpha(ctx, alpha);
+            drawSwapping(ctx, mc, cfg, layout, entry, swap, alpha);
         } else {
-            // 本格的不透明度必须包在内容外面：只给边框设 alpha、内容直接画，就是 2.0.3 的回归
-            // —— 空手 ↔ 工具来回切时图标、耐久条、数字都是硬跳出来的，只有边框在淡。
-            pushAlpha(ctx, alpha);
-            drawIconLayer(ctx, cfg, entry.content(), 0, 0);
-            drawGaugeLayer(ctx, mc, cfg, layout, entry.content());
-            popAlpha(ctx, alpha);
+            drawStill(ctx, mc, cfg, layout, entry.content(), alpha);
         }
+    }
+
+    /**
+     * 换物过渡中的一格：两份内容各推一格、交叉淡入淡出（见 {@link SwapState}）。位移用几何层的
+     * 步距（缩放前的像素），所以缩放多少就走多少。
+     */
+    private static void drawSwapping(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
+                                     DurabilityEntry entry, SwapState swap, float alpha) {
+        boolean horizontal = cfg.orientation == DuraHudConfig.Orientation.HORIZONTAL;
+        int pitch = horizontal ? layout.pitchX() : layout.pitchY();
+        CellContent incoming = entry.content();
+        Severity incomingSeverity = Severity.of(cfg, incoming.ratio());
+        // 只有<b>图标层</b>推一格、交叉淡入淡出：旧图标往下一格走、新图标从上一格进来。
+        drawShiftedIcon(ctx, cfg, entry.outgoing(), swap.outgoingAlpha(), swap.outgoingShift(),
+                horizontal, pitch, alpha, Severity.of(cfg, entry.outgoing().ratio()));
+        drawShiftedIcon(ctx, cfg, incoming, swap.incomingAlpha(), swap.incomingShift(),
+                horizontal, pitch, alpha, incomingSeverity);
+        // 仪表层（耐久条 + 数值）不参与过渡：定在原地，也不跟着交叉淡化 ——
+        // 切换工具时变的只是条的长度与数字（CellContent 的加减动画）。过渡期间也只画当前这一份：
+        // 离场那份替身已经把显示值冻住了，两份都画就会在原地叠出两个数字、两条长度不同的条。
+        pushAlpha(ctx, alpha);
+        drawGaugeLayer(ctx, mc, cfg, layout, incoming, incomingSeverity);
+        popAlpha(ctx, alpha);
+    }
+
+    /**
+     * 没有过渡的一格：图标层与仪表层画在当前内容上，两层共用同一个耐久档位（同一份内容，
+     * 没必要把阈值判两遍）。
+     *
+     * <p>本格的不透明度必须包在内容外面：只给边框设 alpha、内容直接画，就是 2.0.3 的回归
+     * —— 空手 ↔ 工具来回切时图标、耐久条、数字都是硬跳出来的，只有边框在淡。</p>
+     */
+    private static void drawStill(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
+                                  CellContent content, float alpha) {
+        Severity severity = Severity.of(cfg, content.ratio());
+        pushAlpha(ctx, alpha);
+        drawIconLayer(ctx, cfg, content, 0, 0, severity);
+        drawGaugeLayer(ctx, mc, cfg, layout, content, severity);
+        popAlpha(ctx, alpha);
     }
 
     /**
@@ -155,17 +197,18 @@ public final class HudRenderer {
      * {@code shift} 个步距后画出来（{@code shift} 为 -1 时正好落在「上一个格子」的位置）。
      *
      * @param alpha 这一格的淡入淡出系数（两份内容共用的外层系数）
+     * @param severity 这一份内容的耐久档位，由调用者按它自己的 {@code ratio()} 算好传来
      */
     private static void drawShiftedIcon(class_332 ctx, DuraHudConfig cfg, CellContent content,
                                         float swapAlpha, float shift, boolean horizontal, int pitch,
-                                        float alpha) {
+                                        float alpha, Severity severity) {
         float a = alpha * swapAlpha;
         if (a <= 0.01F) {
             return;   // 完全透明的替身没必要画（也省掉一次物品渲染）
         }
         int offset = Math.round(shift * pitch);
         pushAlpha(ctx, a);
-        drawIconLayer(ctx, cfg, content, horizontal ? offset : 0, horizontal ? 0 : offset);
+        drawIconLayer(ctx, cfg, content, horizontal ? offset : 0, horizontal ? 0 : offset, severity);
         popAlpha(ctx, a);
     }
 
@@ -178,12 +221,14 @@ public final class HudRenderer {
      *
      * @param dx 换物滑入的横向位移（已缩放、已取整；没有过渡时是 0）
      * @param dy 换物滑入的纵向位移
+     * @param severity 这一份内容的耐久档位（调用者算一次，图标层与仪表层共用）
      */
-    private static void drawIconLayer(class_332 ctx, DuraHudConfig cfg, CellContent content, int dx, int dy) {
+    private static void drawIconLayer(class_332 ctx, DuraHudConfig cfg, CellContent content, int dx, int dy,
+                                      Severity severity) {
         if (cfg.showItemIcons) {
             ctx.method_51427(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
         }
-        if (content.hasBar() && cfg.highlightCritical && Severity.of(cfg, content.ratio()) == Severity.CRIT) {
+        if (content.hasBar() && cfg.highlightCritical && severity == Severity.CRIT) {
             Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
                     (Metrics.CELL_H - Metrics.SELECT_H) / 2 + dy);
         }
@@ -196,10 +241,11 @@ public final class HudRenderer {
      *
      * <p>过渡期间也只画<b>当前</b>这一份（{@code entry.content()}）：离场那份替身已经把显示值
      * 冻住了，两份都画就会在原地叠出两个数字、两条长度不同的条。</p>
+     *
+     * @param severity 这一份内容的耐久档位（同一帧里图标层已经算过，这里不再重判阈值）
      */
     private static void drawGaugeLayer(class_332 ctx, class_310 mc, DuraHudConfig cfg,
-                                       HudLayout layout, CellContent content) {
-        Severity severity = Severity.of(cfg, content.ratio());
+                                       HudLayout layout, CellContent content, Severity severity) {
         if (content.hasBar()) {
             drawBar(ctx, layout.barOffsetX(), layout.barOffsetY(), layout.barLength(),
                     content.displayRatio(), severity);

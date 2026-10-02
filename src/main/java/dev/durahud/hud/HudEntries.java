@@ -34,6 +34,12 @@ public final class HudEntries {
     private final int[] extraSlot = new int[MAX_EXTRA];
     /** 本帧重新认领过的格子；没被认领的说明物品已经不在，要开始淡出。 */
     private final boolean[] extraClaimed = new boolean[MAX_EXTRA];
+    /**
+     * 池子是否「全空闲」：没有任何一格占着位、也没有换物过渡没走完。没有额外装备模组的玩家
+     * （大多数）因此每帧不用碰这 12 个格子 —— 跳过 {@code advance}/{@code occupiesCell}，
+     * 视图里也不会出现饰品格。一旦有格子认领或被占住，这个标记就在同一次刷新里变回 false。
+     */
+    private boolean extrasIdle = true;
 
     /** 本帧的额外槽物品（每 tick 至多向 Trinkets 要一次，槽位内容只会在 tick 里变）。 */
     private List<class_1799> extraStacks = Collections.emptyList();
@@ -101,11 +107,14 @@ public final class HudEntries {
                 extraStacksTick = player.field_6012;
                 extraStacks = ExtraSlots.collect(player);
             }
-        } else {
+        } else if (!extraStacks.isEmpty()) {
             extraStacks = Collections.emptyList();
             extraStacksTick = Long.MIN_VALUE;
         }
         Arrays.fill(extraClaimed, false);
+        if (extraStacks.isEmpty() && extrasIdle) {
+            return;   // 快路径：没东西要认领、池子也全空闲，这一帧不必碰池子（见 extrasIdle）
+        }
         for (int slot = 0; slot < extraStacks.size() && slot < MAX_EXTRA; slot++) {
             class_1799 stack = extraStacks.get(slot);
             if (stack == null || stack.method_7960()) {
@@ -119,15 +128,20 @@ public final class HudEntries {
             extraSlot[index] = slot;
             extraClaimed[index] = true;
         }
+        boolean busy = false;
         for (int i = 0; i < MAX_EXTRA; i++) {
             if (!extraClaimed[i]) {
                 extraPool[i].setStack(class_1799.field_8037);   // 物品没了：开始淡出，槽位号先留着
             }
             extraPool[i].advance(dtSeconds, cfg);
-            if (!extraPool[i].occupiesCell(cfg)) {
+            // 过渡也算「忙」：淡出结束得比过渡早时，这一格还得继续把过渡推进完（见 advanceEmpty）。
+            if (extraPool[i].occupiesCell(cfg) || extraPool[i].swap().active()) {
+                busy = true;
+            } else {
                 extraSlot[i] = -1;                        // 彻底离场，下次从头开始
             }
         }
+        extrasIdle = !busy;
     }
 
     /** 给一件饰品挑一格；挑不到（池子满了）返回 -1。 */
@@ -182,6 +196,9 @@ public final class HudEntries {
      * 留在原位 —— 它原来的槽位可能已经被新上场的饰品占了，留在原位两格会叠在一起。</p>
      */
     private void appendExtras(DuraHudConfig cfg) {
+        if (extrasIdle) {
+            return;   // 池子里没有占位的格子（刚刷新过，见 extrasIdle）：视图里不会出现饰品格
+        }
         for (int pass = 0; pass < 2; pass++) {
             for (int slot = 0; slot < MAX_EXTRA; slot++) {
                 for (int i = 0; i < MAX_EXTRA; i++) {

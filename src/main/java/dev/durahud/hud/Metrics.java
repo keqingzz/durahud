@@ -46,14 +46,10 @@ public final class Metrics {
     public static final int CAP_LEFT = 2;
     public static final int CAP_RIGHT = 4;
 
-    /** bars.png 第一行的 7 种颜色索引。 */
-    public static final int BAR_PINK = 0;
-    public static final int BAR_BLUE = 1;
+    /** 耐久条用到的三种色号（bars.png 第一行的颜色索引）；其余色号没有使用者，不在这里留死常量。 */
     public static final int BAR_RED = 2;
     public static final int BAR_GREEN = 3;
     public static final int BAR_YELLOW = 4;
-    public static final int BAR_PURPLE = 5;
-    public static final int BAR_WHITE = 6;
 
     // ------------------------------------------------------------------
     // 布局

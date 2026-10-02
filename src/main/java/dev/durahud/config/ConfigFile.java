@@ -173,10 +173,10 @@ public final class ConfigFile {
         if (from >= CONFIG_VERSION) {
             return false;
         }
-        if (from < 1) {
-            for (String key : REMOVED_KEYS) {
-                root.remove(key);
-            }
+        // 废弃键对<b>任何</b>旧文件都清掉。这些键在 v0 时期就存在，只会出现在旧文件里；以前只在
+        // from < 1 时清，于是标着 v1..v5 的文件升级后仍会一直带着 barStyle / cellOpacity 这些垃圾键。
+        for (String key : REMOVED_KEYS) {
+            root.remove(key);
         }
         if (from < 2) {
             // v1 → v2：onlyDurableHand 改名 onlyDurableItems，含义也从「只看手持」扩到所有槽位，
@@ -310,10 +310,6 @@ public final class ConfigFile {
 
         Json(JsonObject object) {
             this.object = object;
-        }
-
-        boolean has(String key) {
-            return object.has(key);
         }
 
         boolean b(String key, boolean current) {
