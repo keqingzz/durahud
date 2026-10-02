@@ -22,6 +22,10 @@ import net.minecraft.class_332;
  * 1。物品图标与文字是<b>批处理</b>的，颜色要等 {@code ctx.draw()} 把它们刷出去那一刻才
  * 生效，所以设色前后各刷一次：设色前刷，是为了不让「已经排队的上一格」被染成这一格的颜色
  * （旧版 cellOpacity 就是栽在这里）。详见 README 7.6。</p>
+ *
+ * <p><b>换物过渡</b>：同一个格子里换了别的东西时，{@link SwapState} 再给一层「内容不透明度」
+ * 与一个滑入位移。两者都只作用于内容（图标 / 耐久条 / 选中框 / 文字），格子边框和格子位置
+ * 不动 —— 边框属于格子，内容才是被换掉的东西。</p>
  */
 public final class HudRenderer {
 
@@ -116,27 +120,37 @@ public final class HudRenderer {
         if (!visible) {
             return;
         }
-        pushAlpha(ctx, alpha);
-        drawCellContent(ctx, mc, cfg, layout, entry.content());
-        popAlpha(ctx, alpha);
+        // 格子的淡入淡出 × 换物过渡：两层不透明度相乘（没有过渡时后一项恒为 1）。
+        float contentAlpha = alpha * entry.swap().alpha();
+        // 换物滑入：横向排列时新内容从左边滑进来，纵向时从上方；位移只给内容，边框留在原地。
+        float slide = entry.swap().slide() * Metrics.SWAP_SLIDE * layout.scale();
+        boolean horizontal = cfg.orientation == DuraHudConfig.Orientation.HORIZONTAL;
+        int slideX = horizontal ? -Math.round(slide) : 0;
+        int slideY = horizontal ? 0 : -Math.round(slide);
+        pushAlpha(ctx, contentAlpha);
+        drawCellContent(ctx, mc, cfg, layout, entry.content(), slideX, slideY);
+        popAlpha(ctx, contentAlpha);
     }
 
     /**
      * 一格的内容：图标 / 耐久条 / 选中框 / 数值。不透明度由调用者包在外面 ——
      * 早退之前一定要先 popAlpha，否则这一格的半透明会漏给后面所有格子。
+     *
+     * @param dx 换物滑入的横向位移（已缩放、已取整；没有过渡时是 0）
+     * @param dy 换物滑入的纵向位移
      */
     private static void drawCellContent(class_332 ctx, class_310 mc, DuraHudConfig cfg,
-                                        HudLayout layout, CellContent content) {
+                                        HudLayout layout, CellContent content, int dx, int dy) {
         if (cfg.showItemIcons) {
-            ctx.method_51427(content.stack(), Metrics.ICON_X, Metrics.ICON_Y);
+            ctx.method_51427(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
         }
         Severity severity = Severity.of(cfg, content.ratio());
         if (content.hasBar()) {
-            drawBar(ctx, layout.barOffsetX(), layout.barOffsetY(),
+            drawBar(ctx, layout.barOffsetX() + dx, layout.barOffsetY() + dy,
                     layout.barLength(), content.ratio(), severity);
             if (cfg.highlightCritical && severity == Severity.CRIT) {
-                Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2,
-                        (Metrics.CELL_H - Metrics.SELECT_H) / 2);
+                Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
+                        (Metrics.CELL_H - Metrics.SELECT_H) / 2 + dy);
             }
         }
         if (!layout.hasText()) {
@@ -146,8 +160,8 @@ public final class HudRenderer {
         String label = content.label(cfg, mc.field_1772);
         if (!label.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, label,
-                    layout.textOffsetX(content.labelWidth()),
-                    layout.textOffsetY(), severity.textColor);
+                    layout.textOffsetX(content.labelWidth()) + dx,
+                    layout.textOffsetY() + dy, severity.textColor);
         }
     }
 

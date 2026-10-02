@@ -75,4 +75,6 @@ public final class Metrics {
     public static final int BAR_MIN = 8;
     /** 贴边锚点与屏幕边缘的距离，同时也是把 HUD 拉回屏幕内时的最小留白。 */
     public static final int SCREEN_MARGIN = 4;
+    /** 换物过渡时新内容的滑入起始位移（缩放前的像素，见 {@link SwapState}）。 */
+    public static final int SWAP_SLIDE = 8;
 }

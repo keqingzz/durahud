@@ -38,6 +38,8 @@ public final class DurabilityEntry {
     private class_1799 stack;
     /** 本帧要画的内容快照；内容消失后保留最后一份，作为淡出用的替身。 */
     private final CellContent content = new CellContent();
+    /** 同一格里换了别的东西时的过渡：旧内容退场 → 新内容渐入 + 滑入（见 {@link SwapState}）。 */
+    private final SwapState swap = new SwapState();
     /** 淡入淡出进度 0..1（1 = 完全不透明）。 */
     private float fade;
     /** 本帧的绘制位置（缩放后的屏幕坐标），平滑移动的中间量。 */
@@ -78,6 +80,11 @@ public final class DurabilityEntry {
     /** 本帧要画的内容快照；内容已经消失时，它是最后一份淡出替身。 */
     public CellContent content() {
         return content;
+    }
+
+    /** 换物过渡的状态；渲染器读它的不透明度与滑入位移（见 {@link SwapState}）。 */
+    public SwapState swap() {
+        return swap;
     }
 
     /** 淡入淡出进度 0..1。 */
@@ -126,18 +133,70 @@ public final class DurabilityEntry {
     }
 
     /**
-     * 每帧推进淡入淡出，并在有实物内容时刷新快照。
+     * 每帧推进淡入淡出与换物过渡，并在有实物内容时刷新快照。
+     *
+     * <p>「有内容」时默认就地刷新快照（掉耐久、改显示模式都走这里）。只有当<b>快照里画的
+     * 是另一种物品</b>——也就是同一个格子里换了东西——才启动 {@link SwapState}：快照先冻住，
+     * 让旧的那一份按老方案淡出，退场结束后再从新内容开始淡入 + 滑入。</p>
      *
      * @param dtSeconds 距上一帧的秒数（由渲染器给出；停帧或长时间暂停后传 0，动画就停在原地）
      */
     public void advance(float dtSeconds, DuraHudConfig cfg) {
         boolean filled = hasContents(cfg);
-        if (filled) {
-            content.capture(this);
+
+        if (!cfg.animateCells) {
+            swap.clear();
+            if (filled) {
+                content.capture(this);
+            }
+            fade = filled ? 1.0F : 0.0F;
+            return;
         }
-        fade = cfg.animateCells
-                ? FadeState.approach(fade, filled ? 1.0F : 0.0F, dtSeconds, cfg.animationMillis)
-                : (filled ? 1.0F : 0.0F);
+
+        if (!swap.active() && filled) {
+            // 格子还在淡入淡出的半路上时就别插一脚：那点时间本来就短，交给 fade 管更干净。
+            if (sameContentAsCurrent() || fade < 1.0F) {
+                content.capture(this);
+            } else {
+                swap.begin();
+            }
+        }
+
+        if (swap.active()) {
+            if (swap.outgoing()) {
+                SwapState.Step step = swap.advance(dtSeconds, cfg.animationMillis, filled);
+                if (step == SwapState.Step.INCOMING) {
+                    content.capture(this);
+                } else if (step == SwapState.Step.GONE) {
+                    // 退场结束时东西已经没了：内容刚才就淡完了，直接归零，别再淡第二次。
+                    fade = 0.0F;
+                }
+            } else if (filled) {
+                // 滑入期间跟着实物刷新（这几百毫秒里耐久照样会变）。
+                swap.advance(dtSeconds, cfg.animationMillis, true);
+                content.capture(this);
+            } else {
+                // 滑到一半东西就没了：取消过渡，回到普通淡出。
+                swap.clear();
+            }
+        }
+
+        fade = FadeState.approach(fade, filled ? 1.0F : 0.0F, dtSeconds, cfg.animationMillis);
+    }
+
+    /**
+     * 快照里画的还是不是手里这件东西。
+     *
+     * <p>比的是<b>物品身份</b>（{@code getItem()}）而不是整份栈：掉耐久、附魔变化、数量增减
+     * 都不算「换物」，那些情况本来就地刷新就够了；换成另一种物品才走过渡。任一侧是空的时候
+     * 也不算换物 —— 空槽位的进出由 {@code fade} 负责，别在这里插一脚。</p>
+     */
+    private boolean sameContentAsCurrent() {
+        class_1799 drawn = content.stack();
+        if (drawn.method_7960() || isEmpty()) {
+            return true;
+        }
+        return drawn.method_7909() == stack.method_7909();
     }
 
     public boolean isEmpty() {
