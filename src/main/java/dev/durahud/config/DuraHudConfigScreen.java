@@ -127,62 +127,86 @@ public class DuraHudConfigScreen extends class_437 {
 
     private void buildPage() {
         switch (tab) {
-            case DISPLAY -> {
-                toggle("durahud.option.enabled", cfg.enabled, v -> cfg.enabled = v, null);
-                toggle("durahud.option.showMainhand", cfg.showMainhand, v -> cfg.showMainhand = v, null);
-                toggle("durahud.option.showOffhand", cfg.showOffhand, v -> cfg.showOffhand = v, null);
-                toggle("durahud.option.showArmor", cfg.showArmor, v -> cfg.showArmor = v, null);
-                toggle("durahud.option.showTrinkets", cfg.showTrinkets, v -> cfg.showTrinkets = v, null);
-            }
-            case ITEMS -> {
-                toggle("durahud.option.onlyDurableItems", cfg.onlyDurableItems, v -> cfg.onlyDurableItems = v,
-                        "durahud.tip.onlyDurableItems");
-                wornNonDurableRow = options.size();
-                toggle("durahud.option.showWornNonDurable", cfg.showWornNonDurable, v -> cfg.showWornNonDurable = v,
-                        "durahud.tip.showWornNonDurable");
-                toggle("durahud.option.hideFull", cfg.hideFull, v -> cfg.hideFull = v, "durahud.tip.hideFull");
-                toggle("durahud.option.showEmptySlots", cfg.showEmptySlots, v -> cfg.showEmptySlots = v,
-                        "durahud.tip.showEmptySlots");
-            }
-            case LAYOUT -> {
-                cycle("durahud.option.anchor", "durahud.anchor", DuraHudConfig.Anchor.values(), cfg.anchor,
-                        v -> cfg.anchor = v);
-                cycle("durahud.option.orientation", "durahud.option.orientation",
-                        DuraHudConfig.Orientation.values(), cfg.orientation, v -> cfg.orientation = v);
-                slider("durahud.option.scale", 0.5D, 3.0D, cfg.scale, false, false,
-                        v -> cfg.scale = (float) v, null);
-                slider("durahud.option.offsetX", -200.0D, 200.0D, cfg.offsetX, true, false,
-                        v -> cfg.offsetX = (int) v, null);
-                slider("durahud.option.offsetY", -200.0D, 200.0D, cfg.offsetY, true, false,
-                        v -> cfg.offsetY = (int) v, null);
-                slider("durahud.option.barLength", 0.0D, 182.0D, cfg.barLength, true, true,
-                        v -> cfg.barLength = (int) v, null);
-            }
-            case LOOK -> {
-                cycle("durahud.option.barPlacement", "durahud.option.barPlacement",
-                        DuraHudConfig.BarSide.values(), cfg.barPlacement, v -> cfg.barPlacement = v);
-                cycle("durahud.option.valuePlacement", "durahud.option.valuePlacement",
-                        DuraHudConfig.ValuePlacement.values(), cfg.valuePlacement, v -> cfg.valuePlacement = v);
-                cycle("durahud.option.valueDisplay", "durahud.valueDisplay", DuraHudConfig.ValueDisplay.values(),
-                        cfg.valueDisplay, v -> cfg.valueDisplay = v);
-                toggle("durahud.option.showSlotFrames", cfg.showSlotFrames, v -> cfg.showSlotFrames = v, null);
-                toggle("durahud.option.showItemIcons", cfg.showItemIcons, v -> cfg.showItemIcons = v, null);
-            }
-            case WARNING -> {
-                slider("durahud.option.warnThreshold", 1.0D, 100.0D, cfg.warnThreshold, true, false,
-                        v -> setWarn((int) v), null);
-                critRow = options.size();
-                slider("durahud.option.critThreshold", 0.0D, 99.0D, cfg.critThreshold, true, false,
-                        v -> setCrit((int) v), null);
-                toggle("durahud.option.highlightCritical", cfg.highlightCritical, v -> cfg.highlightCritical = v, null);
-            }
-            case ANIMATION -> {
-                toggle("durahud.option.animateCells", cfg.animateCells, v -> cfg.animateCells = v, null);
-                animationRow = options.size();
-                slider("durahud.option.animationMillis", 50.0D, 1000.0D, cfg.animationMillis, true, false,
-                        v -> cfg.animationMillis = (int) v, "durahud.tip.animationMillis");
-            }
+            case DISPLAY -> buildDisplayPage();
+            case ITEMS -> buildItemsPage();
+            case LAYOUT -> buildLayoutPage();
+            case LOOK -> buildLookPage();
+            case WARNING -> buildWarningPage();
+            case ANIMATION -> buildAnimationPage();
         }
+    }
+
+    /** 显示页：整块 HUD 的总开关，以及四类装备各自的显隐。 */
+    private void buildDisplayPage() {
+        toggle("durahud.option.enabled", cfg.enabled, v -> cfg.enabled = v, null);
+        toggle("durahud.option.showMainhand", cfg.showMainhand, v -> cfg.showMainhand = v, null);
+        toggle("durahud.option.showOffhand", cfg.showOffhand, v -> cfg.showOffhand = v, null);
+        toggle("durahud.option.showArmor", cfg.showArmor, v -> cfg.showArmor = v, null);
+        toggle("durahud.option.showTrinkets", cfg.showTrinkets, v -> cfg.showTrinkets = v, null);
+    }
+
+    /**
+     * 物品页：哪些东西才占格。{@code wornNonDurableRow} 记下第二行，供
+     * {@link #refreshDependencies()} 在「只显示有耐久的物品」开启时置灰。
+     */
+    private void buildItemsPage() {
+        toggle("durahud.option.onlyDurableItems", cfg.onlyDurableItems, v -> cfg.onlyDurableItems = v,
+                "durahud.tip.onlyDurableItems");
+        wornNonDurableRow = options.size();
+        toggle("durahud.option.showWornNonDurable", cfg.showWornNonDurable, v -> cfg.showWornNonDurable = v,
+                "durahud.tip.showWornNonDurable");
+        toggle("durahud.option.hideFull", cfg.hideFull, v -> cfg.hideFull = v, "durahud.tip.hideFull");
+        toggle("durahud.option.showEmptySlots", cfg.showEmptySlots, v -> cfg.showEmptySlots = v,
+                "durahud.tip.showEmptySlots");
+    }
+
+    /** 布局页：停靠方向、排列方向、缩放、偏移与条长。 */
+    private void buildLayoutPage() {
+        cycle("durahud.option.anchor", "durahud.anchor", DuraHudConfig.Anchor.values(), cfg.anchor,
+                v -> cfg.anchor = v);
+        cycle("durahud.option.orientation", "durahud.option.orientation",
+                DuraHudConfig.Orientation.values(), cfg.orientation, v -> cfg.orientation = v);
+        slider("durahud.option.scale", 0.5D, 3.0D, cfg.scale, false, false,
+                v -> cfg.scale = (float) v, null);
+        slider("durahud.option.offsetX", -200.0D, 200.0D, cfg.offsetX, true, false,
+                v -> cfg.offsetX = (int) v, null);
+        slider("durahud.option.offsetY", -200.0D, 200.0D, cfg.offsetY, true, false,
+                v -> cfg.offsetY = (int) v, null);
+        slider("durahud.option.barLength", 0.0D, 182.0D, cfg.barLength, true, true,
+                v -> cfg.barLength = (int) v, null);
+    }
+
+    /** 外观页：条与数值放哪、数值显示成什么、格子与图标的装饰。 */
+    private void buildLookPage() {
+        cycle("durahud.option.barPlacement", "durahud.option.barPlacement",
+                DuraHudConfig.BarSide.values(), cfg.barPlacement, v -> cfg.barPlacement = v);
+        cycle("durahud.option.valuePlacement", "durahud.option.valuePlacement",
+                DuraHudConfig.ValuePlacement.values(), cfg.valuePlacement, v -> cfg.valuePlacement = v);
+        cycle("durahud.option.valueDisplay", "durahud.valueDisplay", DuraHudConfig.ValueDisplay.values(),
+                cfg.valueDisplay, v -> cfg.valueDisplay = v);
+        toggle("durahud.option.showSlotFrames", cfg.showSlotFrames, v -> cfg.showSlotFrames = v, null);
+        toggle("durahud.option.showItemIcons", cfg.showItemIcons, v -> cfg.showItemIcons = v, null);
+    }
+
+    /**
+     * 警示页：两个阈值与濒危高亮。{@code critRow} 记下第二行，{@link #method_25426()} 据此抓出 crit
+     * 滑条（{@link #setWarn(int)} 改 warn 时要同步它的显示）。
+     */
+    private void buildWarningPage() {
+        slider("durahud.option.warnThreshold", 1.0D, 100.0D, cfg.warnThreshold, true, false,
+                v -> setWarn((int) v), null);
+        critRow = options.size();
+        slider("durahud.option.critThreshold", 0.0D, 99.0D, cfg.critThreshold, true, false,
+                v -> setCrit((int) v), null);
+        toggle("durahud.option.highlightCritical", cfg.highlightCritical, v -> cfg.highlightCritical = v, null);
+    }
+
+    /** 动画页：淡入淡出开关与时长。{@code animationRow} 记下时长那一行，供置灰用。 */
+    private void buildAnimationPage() {
+        toggle("durahud.option.animateCells", cfg.animateCells, v -> cfg.animateCells = v, null);
+        animationRow = options.size();
+        slider("durahud.option.animationMillis", 50.0D, 1000.0D, cfg.animationMillis, true, false,
+                v -> cfg.animationMillis = (int) v, "durahud.tip.animationMillis");
     }
 
     /**
