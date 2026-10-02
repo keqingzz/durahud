@@ -20,6 +20,9 @@ import net.minecraft.class_327;
  * 和量好的字宽（用 {@link #fingerprint()} 判断），所以数字没变的那些帧没有任何字符串分配
  * 与字形查询；动画期间显示值每帧都在变，但指纹取的是<b>四舍五入后的整数</b>，
  * 只有数字真的翻一位时才重拼一次。</p>
+ *
+ * <p>VALUE 模式的「剩余 / 上限」是<b>两行</b>：两行在同一次刷新里一起拼好、一起量宽
+ * （{@link #label} / {@link #secondLabel}）。只有第一行参与加减动画 —— 上限是个常量。</p>
  */
 public final class CellContent {
 
@@ -33,9 +36,12 @@ public final class CellContent {
     /** 条长与数字共用的加减动画：真实比例 -> 显示比例。 */
     private final ValueTween tween = new ValueTween();
 
-    /** 缓存的标签：文字、字宽，以及算它时用的指纹与显示模式。 */
+    /** 缓存的第一行标签：文字、字宽，以及算它时用的指纹与显示模式。 */
     private String label = "";
     private int labelWidth;
+    /** 缓存的第二行标签（VALUE 模式的上限）；与第一行同一次刷新。 */
+    private String secondLabel = "";
+    private int secondLabelWidth;
     private int labelKey;
     private DuraHudConfig.ValueDisplay labelDisplay;
     private boolean labelValid;
@@ -130,6 +136,8 @@ public final class CellContent {
             labelValid = true;
             label = CellLabel.text(cfg.valueDisplay, bar, numeric, displayRemaining(), max, displayPercent());
             labelWidth = label.isEmpty() ? 0 : font.method_1727(label);
+            secondLabel = CellLabel.secondLine(cfg.valueDisplay, numeric, max);
+            secondLabelWidth = secondLabel.isEmpty() ? 0 : font.method_1727(secondLabel);
         }
         return label;
     }
@@ -137,6 +145,22 @@ public final class CellContent {
     /** 上一次 {@link #label} 算出来的字宽（和它同一次缓存，不会不同步）。 */
     public int labelWidth() {
         return labelWidth;
+    }
+
+    /**
+     * 第二行文字（VALUE 模式的上限，其余模式是空串），画在 {@link #label} 的下一行。
+     *
+     * <p>与 {@link #label} <b>同一次</b>刷新：画之前必须先调 {@code label(cfg, font)}，
+     * 否则拿到的可能是上一帧的那一份（绘制路径本来就是先第一行、再第二行，见
+     * {@code HudRenderer.drawGaugeLayer}）。</p>
+     */
+    public String secondLabel() {
+        return secondLabel;
+    }
+
+    /** 第二行的字宽，同样与 {@link #label} 同步缓存；第二行不存在时是 0。 */
+    public int secondLabelWidth() {
+        return secondLabelWidth;
     }
 
     /** 显示值下的剩余耐久：动画没走完时它是中间的整数（VALUE 模式显示这个）。 */

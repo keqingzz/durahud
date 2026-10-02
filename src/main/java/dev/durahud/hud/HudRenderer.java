@@ -254,10 +254,17 @@ public final class HudRenderer {
             return;
         }
         // 标签与字宽都由 CellContent 缓存：数字没变的帧既不拼字符串、也不量字形宽度。
+        // VALUE 模式是两行（剩余 / 上限），两行在同一次 label(...) 里一起刷好，行距一行高。
         String label = content.label(cfg, mc.field_1772);
         if (!label.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, label,
                     layout.textOffsetX(content.labelWidth()), layout.textOffsetY(), severity.textColor);
+        }
+        String second = content.secondLabel();
+        if (!second.isEmpty()) {
+            drawOutlinedText(ctx, mc.field_1772, second,
+                    layout.textOffsetX(content.secondLabelWidth()),
+                    layout.textOffsetY() + Metrics.TEXT_H, severity.textColor);
         }
     }
 

@@ -93,8 +93,12 @@ public final class Atlas {
     private static int cachedWidth;
 
     /**
-     * 预留的文本宽度是<b>常量</b>，不随当前数字长短变化 —— 否则数字从 "9/250" 变到 "240/250"
-     * 就会改变格子间距、把整排格子推走。用最宽的样本测量，并按字号与开关缓存。
+     * 预留的文本宽度是<b>常量</b>，不随当前数字长短变化 —— 否则数字从 "9" 变到 "240"
+     * 就会改变格子间距、把整排格子推走。用最宽的样本测量，并按字体与显示模式缓存。
+     *
+     * <p>VALUE 模式的「剩余」与「上限」是<b>上下两行</b>（见 {@link CellLabel#secondLine}），
+     * 所以这里按<b>一个</b>四位数预留 —— 旧版本拼成 "9999/9999" 一行，一个格子要按
+     * 9 个字符留宽度，横向排列时格子间距会宽出一大截。</p>
      *
      * <p>这个方法是几何计算的输入（{@link HudLayout#geometry}），因此它必须留在需要
      * Minecraft 字体类的这一侧，让 HudLayout 保持纯净。</p>
@@ -107,7 +111,7 @@ public final class Atlas {
             return cachedWidth;
         }
         int width = switch (display) {
-            case VALUE -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("9999/9999"));
+            case VALUE -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("9999"));
             case PERCENT -> Math.min(Metrics.TEXT_MAX_W, font.method_1727("100%"));
             default -> 0;
         };
