@@ -67,7 +67,9 @@
   "durahud.button.reset": "Reset to defaults",
   "durahud.button.export": "Export preset",
   "durahud.button.import": "Import preset",
-  "durahud.preset.exported": "Preset exported to config/durahud-preset.json",
-  "durahud.preset.imported": "Preset imported",
-  "durahud.preset.failed": "Preset operation failed, see the game log"
+  "durahud.preset.exported": "Preset exported to %s",
+  "durahud.preset.imported": "Preset imported: %s",
+  "durahud.preset.failed": "Preset operation failed (%s), see the game log",
+  "durahud.preset.choosing": "Choose a file in the dialog…",
+  "durahud.preset.cancelled": "Cancelled"
 }

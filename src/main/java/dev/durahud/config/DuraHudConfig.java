@@ -109,10 +109,10 @@ public class DuraHudConfig {
         }
         scale = Math.max(0.25F, Math.min(4.0F, scale));
         barLength = Math.max(0, Math.min(182, barLength));
-        // 偏移量与界面滑条同为 ±200：手改成 100000 时，屏幕上会被 HudLayout 拉回来看不出问题，
-        // 但滑条会显示 200 而配置里仍是 100000（拖一下才对齐）—— 读盘时就夹好，两处永远一致。
-        offsetX = Math.max(-200, Math.min(200, offsetX));
-        offsetY = Math.max(-200, Math.min(200, offsetY));
+        // 偏移量刻意<b>不</b>夹：编辑模式把 HUD 拖到哪，offsetX/offsetY 就是那块屏幕上的绝对
+        // 坐标（1920 宽的窗口里能到 1600+），而界面滑条只有 ±200。早期版本在这里夹一次，于是
+        // 「打开设置界面 HUD 就跳回初始位置」；越界值交给 HudLayout 在绘制时拉回屏幕内即可，
+        // 读盘、拖动与磁盘上的值因此永远一致。
         warnThreshold = Math.max(1, Math.min(100, warnThreshold));
         critThreshold = Math.max(0, Math.min(warnThreshold - 1, critThreshold));
     }

@@ -38,7 +38,9 @@ public final class DurabilityEntry {
     private class_1799 stack;
     /** 本帧要画的内容快照；内容消失后保留最后一份，作为淡出用的替身。 */
     private final CellContent content = new CellContent();
-    /** 同一格里换了别的东西时的过渡：旧内容退场 → 新内容渐入 + 滑入（见 {@link SwapState}）。 */
+    /** 换物过渡里「正在离场」的那一份快照（只有过渡进行中才有意义，见 {@link SwapState}）。 */
+    private final CellContent outgoing = new CellContent();
+    /** 同一格里换了别的东西时的过渡：两份内容各推进一格，边走边交叉淡入淡出。 */
     private final SwapState swap = new SwapState();
     /** 淡入淡出进度 0..1（1 = 完全不透明）。 */
     private float fade;
@@ -82,9 +84,14 @@ public final class DurabilityEntry {
         return content;
     }
 
-    /** 换物过渡的状态；渲染器读它的不透明度与滑入位移（见 {@link SwapState}）。 */
+    /** 换物过渡的状态；渲染器读它的推进量、不透明度与位移（见 {@link SwapState}）。 */
     public SwapState swap() {
         return swap;
+    }
+
+    /** 过渡里正在离场的那份旧内容；只有 {@code swap().active()} 时才该被画。 */
+    public CellContent outgoing() {
+        return outgoing;
     }
 
     /** 淡入淡出进度 0..1。 */
@@ -136,8 +143,8 @@ public final class DurabilityEntry {
      * 每帧推进淡入淡出与换物过渡，并在有实物内容时刷新快照。
      *
      * <p>「有内容」时默认就地刷新快照（掉耐久、改显示模式都走这里）。只有当<b>快照里画的
-     * 是另一种物品</b>——也就是同一个格子里换了东西——才启动 {@link SwapState}：快照先冻住，
-     * 让旧的那一份按老方案淡出，退场结束后再从新内容开始淡入 + 滑入。</p>
+     * 是另一种物品</b>——也就是同一个格子里换了东西——才启动 {@link SwapState}：现在这份内容
+     * 留作离场的替身，新内容立刻接手、从上一格的位置推进来。</p>
      *
      * @param dtSeconds 距上一帧的秒数（由渲染器给出；停帧或长时间暂停后传 0，动画就停在原地）
      */
@@ -153,31 +160,27 @@ public final class DurabilityEntry {
             return;
         }
 
-        if (!swap.active() && filled) {
+        if (!filled) {
+            // 东西没了：换物过渡没意义了，交给普通淡出（格子淡完就消失，后面的格子顶上来）。
+            swap.clear();
+        } else if (!swap.active()) {
             // 格子还在淡入淡出的半路上时就别插一脚：那点时间本来就短，交给 fade 管更干净。
             if (sameContentAsCurrent() || fade < 1.0F) {
                 content.capture(this);
             } else {
+                outgoing.copyFrom(content);   // 现在这份内容留作离场的替身
+                swap.begin();
+                content.capture(this);        // 新内容立刻接手：它在上一格的位置，还完全透明
+            }
+        } else {
+            if (!sameContentAsCurrent()) {
+                // 过渡途中又换了一次：把正在进场的那一份就地变成离场的替身，重新推进一格。
+                outgoing.copyFrom(content);
                 swap.begin();
             }
-        }
-
-        if (swap.active()) {
-            if (swap.outgoing()) {
-                SwapState.Step step = swap.advance(dtSeconds, cfg.animationMillis, filled);
-                if (step == SwapState.Step.INCOMING) {
-                    content.capture(this);
-                } else if (step == SwapState.Step.GONE) {
-                    // 退场结束时东西已经没了：内容刚才就淡完了，直接归零，别再淡第二次。
-                    fade = 0.0F;
-                }
-            } else if (filled) {
-                // 滑入期间跟着实物刷新（这几百毫秒里耐久照样会变）。
-                swap.advance(dtSeconds, cfg.animationMillis, true);
-                content.capture(this);
-            } else {
-                // 滑到一半东西就没了：取消过渡，回到普通淡出。
-                swap.clear();
+            content.capture(this);
+            if (swap.advance(dtSeconds, cfg.animationMillis)) {
+                swap.clear();   // 走完这一帧画出来就是静止态（位移归位、不透明度各就各位）
             }
         }
 

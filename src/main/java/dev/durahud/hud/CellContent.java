@@ -40,6 +40,22 @@ public final class CellContent {
         this.max = entry.max();
     }
 
+    /**
+     * 把另一份快照整个复制过来（换物过渡开始时，把「当前内容」留作离场的替身）。
+     *
+     * <p>物品栈是复制一份而不是共用引用：手持物被消耗掉时原栈会就地变空，替身要留着当时的
+     * 样子 —— 淡出期间画的仍是换成别的东西之前的那一件。标签缓存刻意不复制，指纹重算。</p>
+     */
+    void copyFrom(CellContent other) {
+        this.stack = other.stack.method_7972();
+        this.bar = other.bar;
+        this.ratio = other.ratio;
+        this.numeric = other.numeric;
+        this.remaining = other.remaining;
+        this.max = other.max;
+        this.labelValid = false;
+    }
+
     public class_1799 stack() {
         return stack;
     }

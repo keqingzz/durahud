@@ -34,7 +34,8 @@ public final class ConfigFile {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "durahud.json";
-    private static final String PRESET_NAME = "durahud-preset.json";
+    /** 默认预设文件名。用 .txt：导出的是给人看、可手工编辑的 JSON 文本（见 {@link #exportTo}）。 */
+    private static final String PRESET_NAME = "durahud-preset.txt";
     private static final String VERSION_KEY = "configVersion";
 
     /**
@@ -64,7 +65,7 @@ public final class ConfigFile {
         return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
     }
 
-    /** 预设路径：config/durahud-preset.json（导出与导入都读写它）。 */
+    /** 默认预设路径：config/durahud-preset.txt（原生文件框的初始目录与文件名）。 */
     public static Path presetPath() {
         return FabricLoader.getInstance().getConfigDir().resolve(PRESET_NAME);
     }
@@ -95,15 +96,34 @@ public final class ConfigFile {
         write(path(), cfg, "配置");
     }
 
-    /** 把当前配置导出成预设文件；返回是否成功（界面据此显示提示）。 */
-    public static boolean exportPreset(DuraHudConfig cfg) {
-        return write(presetPath(), cfg, "预设");
+    /** 默认预设文件名（界面拿它当原生「另存为」框里的初始名字）。 */
+    public static String defaultPresetName() {
+        return PRESET_NAME;
     }
 
-    /** 读回预设；文件不存在或格式有问题时返回 null（界面据此显示提示）。 */
+    /** 导出到 config 目录下的默认预设文件；返回是否成功（无图形环境时的回退路径）。 */
+    public static boolean exportPreset(DuraHudConfig cfg) {
+        return exportTo(presetPath(), cfg);
+    }
+
+    /** 读回 config 目录下的默认预设文件；不存在或格式有问题时返回 null。 */
     public static DuraHudConfig importPreset() {
-        Path path = presetPath();
-        if (!Files.exists(path)) {
+        return importFrom(presetPath());
+    }
+
+    /**
+     * 把当前配置导出到指定文件（原生「另存为」框选出来的路径）；返回是否成功。
+     *
+     * <p>写的是与主配置同一套 JSON，只是扩展名用 .txt：内容对人可读、能手改，
+     * 也不至于被误当成模组自己的配置文件。</p>
+     */
+    public static boolean exportTo(Path path, DuraHudConfig cfg) {
+        return path != null && write(path, cfg, "预设");
+    }
+
+    /** 从指定文件读一份配置（原生「打开」框选出来的路径）；不存在或格式有问题时返回 null。 */
+    public static DuraHudConfig importFrom(Path path) {
+        if (path == null || !Files.exists(path)) {
             return null;
         }
         try {
@@ -120,7 +140,10 @@ public final class ConfigFile {
 
     private static boolean write(Path path, DuraHudConfig cfg, String what) {
         try {
-            Files.createDirectories(path.getParent());
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             Files.writeString(path, GSON.toJson(toJson(cfg)), StandardCharsets.UTF_8);
             return true;
         } catch (Exception e) {

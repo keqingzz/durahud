@@ -1,12 +1,15 @@
 package dev.durahud.config;
 
 import dev.durahud.DuraHudClient;
+import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import net.minecraft.class_124;
 import net.minecraft.class_2561;
+import net.minecraft.class_310;
 import net.minecraft.class_332;
 import net.minecraft.class_339;
 import net.minecraft.class_4185;
@@ -279,11 +282,10 @@ public class DuraHudConfigScreen extends class_437 {
                 })
                 .method_46434(layout.buttonX(0), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
         method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.export"), button -> this.status = class_2561.method_43471(
-                        ConfigFile.exportPreset(cfg) ? "durahud.preset.exported" : "durahud.preset.failed"))
+                .method_46430(class_2561.method_43471("durahud.button.export"), button -> this.exportPreset())
                 .method_46434(layout.buttonX(1), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
         method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.import"), button -> this.applyPreset())
+                .method_46430(class_2561.method_43471("durahud.button.import"), button -> this.importPreset())
                 .method_46434(layout.buttonX(2), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
         method_37063(class_4185
                 .method_46430(class_2561.method_43471("durahud.button.done"), button -> this.method_25419())
@@ -305,17 +307,92 @@ public class DuraHudConfigScreen extends class_437 {
         }
     }
 
-    /** 导入预设：成功就整份覆盖当前配置并重开界面，失败只显示提示（不破坏现有配置）。 */
-    private void applyPreset() {
-        DuraHudConfig imported = ConfigFile.importPreset();
+    /**
+     * 导出预设：先弹系统的「另存为」框选路径，选完再写盘。
+     *
+     * <p>弹框会阻塞，所以「选路径 + 写盘」整段放进工作线程，完成后回主线程改提示文字。
+     * 无图形环境时退回 config 目录下的默认文件名，与旧版行为一致。</p>
+     */
+    private void exportPreset() {
+        // 快照一份：工作线程只读它，不受之后在界面上继续改设置的影响。
+        DuraHudConfig snapshot = new DuraHudConfig();
+        snapshot.copyFrom(cfg);
+        if (!PresetDialogs.available()) {
+            this.status = class_2561.method_43469(ConfigFile.exportPreset(snapshot)
+                    ? "durahud.preset.exported" : "durahud.preset.failed", ConfigFile.defaultPresetName());
+            return;
+        }
+        this.status = class_2561.method_43471("durahud.preset.choosing");
+        File directory = dialogDirectory();
+        String defaultName = ConfigFile.defaultPresetName();
+        String title = class_2561.method_43471("durahud.button.export").getString();
+        Thread worker = new Thread(() -> {
+            Path chosen = PresetDialogs.chooseSave(directory, defaultName, title);
+            if (chosen == null) {
+                runOnClient(() -> this.status = class_2561.method_43471("durahud.preset.cancelled"));
+                return;
+            }
+            boolean ok = ConfigFile.exportTo(chosen, snapshot);
+            String name = chosen.getFileName().toString();
+            runOnClient(() -> this.status = class_2561.method_43469(
+                    ok ? "durahud.preset.exported" : "durahud.preset.failed", name));
+        }, "DuraHUD-preset-export");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * 导入预设：先弹系统的「打开」框选文件，选完再读盘并整份覆盖当前配置。
+     *
+     * <p>与导出同样在工作线程里弹框；读回来的配置如果不能用（文件坏了），只显示提示，
+     * 现有配置不动。</p>
+     */
+    private void importPreset() {
+        if (!PresetDialogs.available()) {
+            applyImported(ConfigFile.importPreset(), ConfigFile.defaultPresetName());
+            return;
+        }
+        this.status = class_2561.method_43471("durahud.preset.choosing");
+        File directory = dialogDirectory();
+        String defaultName = ConfigFile.defaultPresetName();
+        String title = class_2561.method_43471("durahud.button.import").getString();
+        Thread worker = new Thread(() -> {
+            Path chosen = PresetDialogs.chooseOpen(directory, defaultName, title);
+            if (chosen == null) {
+                runOnClient(() -> this.status = class_2561.method_43471("durahud.preset.cancelled"));
+                return;
+            }
+            DuraHudConfig imported = ConfigFile.importFrom(chosen);
+            String name = chosen.getFileName().toString();
+            runOnClient(() -> this.applyImported(imported, name));
+        }, "DuraHUD-preset-import");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** 原生框的初始目录：config 目录（拿不到就用系统默认）。 */
+    private static File dialogDirectory() {
+        Path parent = ConfigFile.presetPath().getParent();
+        return parent == null ? null : parent.toFile();
+    }
+
+    /** 工作线程收尾统一回渲染线程：界面状态只在渲染线程上改。 */
+    private static void runOnClient(Runnable action) {
+        class_310.method_1551().execute(action);
+    }
+
+    /** 把导入的配置整份覆盖上去并重开界面；失败只显示提示（不破坏现有配置）。 */
+    private void applyImported(DuraHudConfig imported, String name) {
         if (imported == null) {
-            this.status = class_2561.method_43471("durahud.preset.failed");
+            this.status = class_2561.method_43469("durahud.preset.failed", name);
             return;
         }
         cfg.copyFrom(imported);
         cfg.save();
-        this.status = class_2561.method_43471("durahud.preset.imported");
-        this.method_41843();
+        this.status = class_2561.method_43469("durahud.preset.imported", name);
+        if (class_310.method_1551().field_1755 == this) {
+            this.method_41843();
+        }
     }
 
     // ------------------------------------------------------------------

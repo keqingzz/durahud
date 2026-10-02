@@ -23,9 +23,10 @@ import net.minecraft.class_332;
  * 生效，所以设色前后各刷一次：设色前刷，是为了不让「已经排队的上一格」被染成这一格的颜色
  * （旧版 cellOpacity 就是栽在这里）。详见 README 7.6。</p>
  *
- * <p><b>换物过渡</b>：同一个格子里换了别的东西时，{@link SwapState} 再给一层「内容不透明度」
- * 与一个滑入位移。两者都只作用于内容（图标 / 耐久条 / 选中框 / 文字），格子边框和格子位置
- * 不动 —— 边框属于格子，内容才是被换掉的东西。</p>
+ * <p><b>换物过渡</b>：同一个格子里换了别的东西时，{@link SwapState} 让两份内容各推进一格 ——
+ * 旧内容朝排列方向的下一个格子位置移动并淡出，新内容从上一个格子的位置移动进来并淡入。
+ * 位移与不透明度都只作用于内容（图标 / 耐久条 / 选中框 / 文字），格子边框与格子位置不动 ——
+ * 边框属于格子，内容才是被换掉的东西。</p>
  */
 public final class HudRenderer {
 
@@ -121,15 +122,39 @@ public final class HudRenderer {
             return;
         }
         // 格子的淡入淡出 × 换物过渡：两层不透明度相乘（没有过渡时后一项恒为 1）。
-        float contentAlpha = alpha * entry.swap().alpha();
-        // 换物滑入：横向排列时新内容从左边滑进来，纵向时从上方；位移只给内容，边框留在原地。
-        float slide = entry.swap().slide() * Metrics.SWAP_SLIDE * layout.scale();
+        // 换物过渡：两份内容各推一格、交叉淡入淡出（见 SwapState）。位移用几何层的步距
+        // （缩放前的像素），所以缩放多少就走多少；没有过渡时只有一份内容，就地画。
         boolean horizontal = cfg.orientation == DuraHudConfig.Orientation.HORIZONTAL;
-        int slideX = horizontal ? -Math.round(slide) : 0;
-        int slideY = horizontal ? 0 : -Math.round(slide);
-        pushAlpha(ctx, contentAlpha);
-        drawCellContent(ctx, mc, cfg, layout, entry.content(), slideX, slideY);
-        popAlpha(ctx, contentAlpha);
+        int pitch = horizontal ? layout.pitchX() : layout.pitchY();
+        SwapState swap = entry.swap();
+        if (swap.active()) {
+            drawShifted(ctx, mc, cfg, layout, entry.outgoing(), swap.outgoingAlpha(), swap.outgoingShift(),
+                    horizontal, pitch, alpha);
+            drawShifted(ctx, mc, cfg, layout, entry.content(), swap.incomingAlpha(), swap.incomingShift(),
+                    horizontal, pitch, alpha);
+        } else {
+            drawCellContent(ctx, mc, cfg, layout, entry.content(), 0, 0);
+        }
+    }
+
+    /**
+     * 换物过渡里的一份内容：按 {@code alpha * swapAlpha} 设不透明度、沿排列方向推
+     * {@code shift} 个步距后画出来（{@code shift} 为 -1 时正好落在「上一个格子」的位置）。
+     *
+     * @param alpha 这一格的淡入淡出系数（两份内容共用的外层系数）
+     */
+    private static void drawShifted(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
+                                    CellContent content, float swapAlpha, float shift, boolean horizontal,
+                                    int pitch, float alpha) {
+        float a = alpha * swapAlpha;
+        if (a <= 0.01F) {
+            return;   // 完全透明的替身没必要画（也省掉一次物品渲染）
+        }
+        int offset = Math.round(shift * pitch);
+        pushAlpha(ctx, a);
+        drawCellContent(ctx, mc, cfg, layout, content,
+                horizontal ? offset : 0, horizontal ? 0 : offset);
+        popAlpha(ctx, a);
     }
 
     /**

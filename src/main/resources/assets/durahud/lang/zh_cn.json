@@ -67,7 +67,9 @@
   "durahud.button.reset": "恢复默认",
   "durahud.button.export": "导出预设",
   "durahud.button.import": "导入预设",
-  "durahud.preset.exported": "预设已导出到 config/durahud-preset.json",
-  "durahud.preset.imported": "预设已导入",
-  "durahud.preset.failed": "预设操作失败，详情见游戏日志"
+  "durahud.preset.exported": "预设已导出到 %s",
+  "durahud.preset.imported": "预设已导入：%s",
+  "durahud.preset.failed": "预设操作失败（%s），详情见游戏日志",
+  "durahud.preset.choosing": "请在弹出的窗口里选择文件…",
+  "durahud.preset.cancelled": "已取消"
 }
