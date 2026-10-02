@@ -103,7 +103,7 @@ public class DuraHudEditScreen extends class_437 {
             case GLFW.GLFW_KEY_EQUAL, GLFW.GLFW_KEY_KP_ADD -> scale(0.05F);
             case GLFW.GLFW_KEY_MINUS, GLFW.GLFW_KEY_KP_SUBTRACT -> scale(-0.05F);
             case GLFW.GLFW_KEY_R -> {
-                cfg.anchor = DuraHudConfig.Anchor.HOTBAR_ABOVE;
+                cfg.anchor = DuraHudConfig.DEFAULT_ANCHOR;
                 cfg.offsetX = 0;
                 cfg.offsetY = 0;
                 cfg.scale = 1.0F;
@@ -128,7 +128,7 @@ public class DuraHudEditScreen extends class_437 {
     /**
      * 方向键微调。<b>基准是 HUD 当前实际所在的位置</b>：CUSTOM 锚点的 offset 是绝对原点，
      * 而其他锚点上的 offset 只是相对位移 —— 直接把「相对值 + 步长」写进 CUSTOM 会让整块瞬移
-     * （默认 HOTBAR_ABOVE、offset 0 时按一次「→」就跳到屏幕左上角）。
+     * （贴着热键栏、offset 0 时按一次「→」整块就跳到屏幕左上角）。
      */
     private void nudge(int dx, int dy) {
         HudLayout layout = HudLayout.last();

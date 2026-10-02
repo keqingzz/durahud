@@ -32,11 +32,19 @@ public class DuraHudConfig {
         OFF, PERCENT, VALUE
     }
 
+    /**
+     * 默认锚点：热键栏右侧。字段初始值、{@link #sanitize()} 的兜底与编辑模式里的 R（恢复默认位置）
+     * 都引用这一个常量 —— 三处各写一遍迟早走样。
+     */
+    public static final Anchor DEFAULT_ANCHOR = Anchor.HOTBAR_RIGHT;
+
     public boolean enabled = true;
-    public Anchor anchor = Anchor.HOTBAR_ABOVE;
+    public Anchor anchor = DEFAULT_ANCHOR;
     public Orientation orientation = Orientation.HORIZONTAL;
-    public BarSide barPlacement = BarSide.BELOW;
-    public ValuePlacement valuePlacement = ValuePlacement.AUTO;
+    /** 条在格子的哪一侧。默认格子上方。 */
+    public BarSide barPlacement = BarSide.ABOVE;
+    /** 数值在条的哪一侧；AUTO = 自动放到条的对侧。默认条的上方（也就是整块最上面一行）。 */
+    public ValuePlacement valuePlacement = ValuePlacement.ABOVE;
     /** 0 = 自动（上下时同格子宽，左右时 60）。 */
     public int barLength = 0;
     public int offsetX = 0;
@@ -67,8 +75,8 @@ public class DuraHudConfig {
      * 「自动补位」开关在 v5 → v6 合并到这里 —— 两者本来就是同一件事。
      */
     public boolean showEmptySlots = true;
-    /** 耐久数值显示什么：不显示 / 百分比 / 剩余-上限。 */
-    public ValueDisplay valueDisplay = ValueDisplay.OFF;
+    /** 耐久数值显示什么：不显示 / 百分比 / 剩余-上限。默认显示「上剩余、下上限」两行。 */
+    public ValueDisplay valueDisplay = ValueDisplay.VALUE;
     public boolean showSlotFrames = true;
     public boolean showItemIcons = true;
     /** 格子出现/消失时淡入淡出；关掉就是旧的「直接出现、直接消失」。 */
@@ -89,19 +97,19 @@ public class DuraHudConfig {
     /** 把读到的值夹到合法区间；任何来源（手改 JSON、滑条、旧版本文件）都过这一关。 */
     public void sanitize() {
         if (anchor == null) {
-            anchor = Anchor.HOTBAR_ABOVE;
+            anchor = DEFAULT_ANCHOR;
         }
         if (orientation == null) {
             orientation = Orientation.HORIZONTAL;
         }
         if (barPlacement == null) {
-            barPlacement = BarSide.BELOW;
+            barPlacement = BarSide.ABOVE;
         }
         if (valuePlacement == null) {
-            valuePlacement = ValuePlacement.AUTO;
+            valuePlacement = ValuePlacement.ABOVE;
         }
         if (valueDisplay == null) {
-            valueDisplay = ValueDisplay.OFF;
+            valueDisplay = ValueDisplay.VALUE;
         }
         animationMillis = Math.max(50, Math.min(1000, animationMillis));
         if (!(scale > 0.0F)) {
