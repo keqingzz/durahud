@@ -146,6 +146,9 @@ public final class DurabilityEntry {
      * 是另一种物品</b>——也就是同一个格子里换了东西——才启动 {@link SwapState}：现在这份内容
      * 留作离场的替身，新内容立刻接手、从上一格的位置推进来。</p>
      *
+     * <p>过渡途中又换了一次（连续切换工具/装备）时<b>不重播</b>：进度、位移与离场的那份都
+     * 原地不动，新物品接手进场层并限时收尾（见 {@link SwapState#hurryTo(int)}）。</p>
+     *
      * @param dtSeconds 距上一帧的秒数（由渲染器给出；停帧或长时间暂停后传 0，动画就停在原地）
      */
     public void advance(float dtSeconds, DuraHudConfig cfg) {
@@ -163,7 +166,7 @@ public final class DurabilityEntry {
         if (!filled) {
             // 东西没了：快照不再刷新（最后一份自然成了淡出用的替身），但正在进行的换物过渡
             // 照常走完 —— 半路掐断会让已经推进到一半的进场内容突然弹回原位、不透明度跳回 1。
-            if (swap.active() && swap.advance(dtSeconds, cfg.animationMillis)) {
+            if (swap.active() && swap.advance(dtSeconds)) {
                 swap.clear();
             }
         } else if (!swap.active()) {
@@ -172,22 +175,34 @@ public final class DurabilityEntry {
                 content.capture(this, cfg, dtSeconds);
             } else {
                 outgoing.copyFrom(content);   // 现在这份内容留作离场的替身
-                swap.begin();
+                swap.begin(cfg.animationMillis);
                 content.capture(this, cfg, dtSeconds);   // 新内容立刻接手：它在上一格的位置
             }
         } else {
             if (!sameContentAsCurrent()) {
-                // 过渡途中又换了一次：把正在进场的那一份就地变成离场的替身，重新推进一格。
-                outgoing.copyFrom(content);
-                swap.begin();
+                // 过渡途中又换了一次：<b>不重播</b>。离场那份照旧接着走、进度与位移都原地不动，
+                // 新物品直接接手「正在进场」的那一层（位置与不透明度连续，不跳），只是把剩下
+                // 这段路限时收尾 —— 否则动画时长一大，每换一次都要从头飘一遍，手感就是「卡住」。
+                swap.hurryTo(interruptMillis(cfg));
             }
             content.capture(this, cfg, dtSeconds);
-            if (swap.advance(dtSeconds, cfg.animationMillis)) {
+            if (swap.advance(dtSeconds)) {
                 swap.clear();   // 走完这一帧画出来就是静止态（位移归位、不透明度各就各位）
             }
         }
 
         fade = FadeState.approach(fade, filled ? 1.0F : 0.0F, dtSeconds, cfg.animationMillis);
+    }
+
+    /**
+     * 被打断的那一段收尾时间上限：不超过配置时长的一半，最少 100 毫秒。
+     *
+     * <p>下限是为了让一小段位移仍然看得见（100 毫秒在 60 帧下也有 6 帧）；上限跟着配置走，
+     * 于是「连续快速切换」每次都把剩下的路砍掉一半，几次之后就基本跟手了 —— 而单次换物
+     * 仍然完整播放 {@code animationMillis}。</p>
+     */
+    private static int interruptMillis(DuraHudConfig cfg) {
+        return Math.max(100, cfg.animationMillis / 2);
     }
 
     /**

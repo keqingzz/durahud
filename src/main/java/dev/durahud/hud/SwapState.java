@@ -7,6 +7,11 @@ package dev.durahud.hud;
  * 新内容从上一个格子的位置移动进来并淡入。两份内容始终相差一个步距（由渲染器给出），
  * 所以中途不会重叠 —— 旧内容还没淡完，新内容已经在它该在的位置上出现了。</p>
  *
+ * <p><b>可被打断</b>：过渡途中又换了东西时，调用者不再 {@link #begin(int)}（那会让画面从
+ * 头重播一遍、而且正在进场的那份会突然落回格心），而是保留进度、把新物品就地换进「正在进场」
+ * 的那一层，再用 {@link #hurryTo(int)} 把剩下的这段路限时收尾。这样一次换物过渡的总时长
+ * 永远是配置的那一段，换几次都不会越拖越长；连续快速切换时后几次还会主动加速跟上。</p>
+ *
  * <p>纯数学，零 Minecraft 引用（可离线单测，见 SwapStateTest）。渲染器按 {@link #shift()} 把
  * 两份内容各推一段距离、按 {@link #outgoingAlpha()} / {@link #incomingAlpha()} 设不透明度；
  * 没有过渡时 {@link #active()} 为 false，此时只有当前内容需要画：位移 0、完全不透明。</p>
@@ -15,6 +20,8 @@ public final class SwapState {
 
     /** 0..1 的线性进度（未缓动）；只有 {@link #active()} 时才有意义。 */
     private float progress;
+    /** 当前速率下走完一整格（进度 0 -> 1）所需的毫秒数；被打断收尾时只会调小、不会调大。 */
+    private int millis = 1;
     private boolean active;
 
     /** 过渡进行中；false 时渲染器走「只有一份内容」的老路。 */
@@ -55,30 +62,53 @@ public final class SwapState {
         return active ? shift() : 1.0F;
     }
 
-    /** 开始一段过渡（已经在过渡里就从头再走一遍）。 */
-    public void begin() {
+    /**
+     * 开始一段过渡，整格用时 {@code animationMillis}。
+     *
+     * <p>已经在过渡里时调用它等于从头重播一遍 —— 打断（半路换物）不要走这里，见 {@link #hurryTo(int)}。</p>
+     */
+    public void begin(int animationMillis) {
         active = true;
         progress = 0.0F;
+        millis = Math.max(1, animationMillis);
+    }
+
+    /**
+     * 打断后的限时收尾：进度、位移、离场那份全都不动，只把「剩下的这段路」压到
+     * {@code capMillis} 毫秒以内走完（已经比它快就什么都不做，绝不反过来变慢）。
+     *
+     * <p>用途是「过渡途中又换了东西」：新物品直接接手正在进场的那一层（位置与不透明度都连续，
+     * 不会跳），同时别让它用剩下的整段时间慢慢悠悠飘进来 —— 动画时长设得越大，这一下越明显。</p>
+     */
+    public void hurryTo(int capMillis) {
+        float remain = 1.0F - progress;
+        if (remain <= 0.0F || capMillis <= 0) {
+            return;
+        }
+        int scaled = (int) Math.ceil(capMillis / remain);
+        if (scaled < millis) {
+            millis = Math.max(1, scaled);
+        }
     }
 
     /** 立刻结束过渡：回到「只有当前内容、原地、完全不透明」的静止态。 */
     public void clear() {
         active = false;
         progress = 0.0F;
+        millis = 1;
     }
 
     /**
-     * 按时间推进一段。
+     * 按当前速率推进一段。
      *
      * @param dtSeconds 距上一帧的秒数（停帧或长时间暂停后传 0，动画就停在原地）
-     * @param animationMillis 整段过渡的时长（&lt;=0 时一帧走完，不会卡住）
      * @return 是否刚好在这一帧走完（调用者据此收尾，比如 {@link #clear()}）
      */
-    public boolean advance(float dtSeconds, int animationMillis) {
+    public boolean advance(float dtSeconds) {
         if (!active || !(dtSeconds > 0.0F)) {
             return false;   // NaN 与负数都当「这一帧没动」
         }
-        progress += dtSeconds * 1000.0F / Math.max(1, animationMillis);
+        progress += dtSeconds * 1000.0F / millis;
         if (progress >= 1.0F) {
             progress = 1.0F;
             return true;
