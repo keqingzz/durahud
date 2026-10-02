@@ -23,10 +23,12 @@ import net.minecraft.class_332;
  * 生效，所以设色前后各刷一次：设色前刷，是为了不让「已经排队的上一格」被染成这一格的颜色
  * （旧版 cellOpacity 就是栽在这里）。详见 README 7.6。</p>
  *
- * <p><b>换物过渡</b>：同一个格子里换了别的东西时，{@link SwapState} 让两份内容各推进一格 ——
- * 旧内容朝排列方向的下一个格子位置移动并淡出，新内容从上一个格子的位置移动进来并淡入。
- * 位移与不透明度都只作用于内容（图标 / 耐久条 / 选中框 / 文字），格子边框与格子位置不动 ——
- * 边框属于格子，内容才是被换掉的东西。</p>
+ * <p><b>换物过渡</b>：同一个格子里换了别的东西时，{@link SwapState} 让两份图标各推进一格 ——
+ * 旧图标朝排列方向的下一个格子位置移动并淡出，新图标从上一个格子的位置移动进来并淡入
+ * （濒危高亮框跟着图标走，它圈的是「这一件东西」）。<b>耐久条与数值不参与这段位移</b>：
+ * 它们定在格子自己的位置上不动，只按 {@link CellContent#displayRatio()} 的变化改长度与数字
+ * （见 README 7.8）—— 切工具时看到的是「图标滑过去、条和数字就地变了一下」，而不是整格内容平移。
+ * 格子边框与格子位置同样不动：边框属于格子。</p>
  */
 public final class HudRenderer {
 
@@ -128,62 +130,79 @@ public final class HudRenderer {
         int pitch = horizontal ? layout.pitchX() : layout.pitchY();
         SwapState swap = entry.swap();
         if (swap.active()) {
-            drawShifted(ctx, mc, cfg, layout, entry.outgoing(), swap.outgoingAlpha(), swap.outgoingShift(),
+            // 只有<b>图标层</b>推一格、交叉淡入淡出：旧图标往下一格走、新图标从上一格进来。
+            drawShiftedIcon(ctx, cfg, entry.outgoing(), swap.outgoingAlpha(), swap.outgoingShift(),
                     horizontal, pitch, alpha);
-            drawShifted(ctx, mc, cfg, layout, entry.content(), swap.incomingAlpha(), swap.incomingShift(),
+            drawShiftedIcon(ctx, cfg, entry.content(), swap.incomingAlpha(), swap.incomingShift(),
                     horizontal, pitch, alpha);
+            // 仪表层（耐久条 + 数值）不参与过渡：定在原地，也不跟着交叉淡化 ——
+            // 切换工具时变的只是条的长度与数字（CellContent 的加减动画）。
+            pushAlpha(ctx, alpha);
+            drawGaugeLayer(ctx, mc, cfg, layout, entry.content());
+            popAlpha(ctx, alpha);
         } else {
             // 本格的不透明度必须包在内容外面：只给边框设 alpha、内容直接画，就是 2.0.3 的回归
             // —— 空手 ↔ 工具来回切时图标、耐久条、数字都是硬跳出来的，只有边框在淡。
             pushAlpha(ctx, alpha);
-            drawCellContent(ctx, mc, cfg, layout, entry.content(), 0, 0);
+            drawIconLayer(ctx, cfg, entry.content(), 0, 0);
+            drawGaugeLayer(ctx, mc, cfg, layout, entry.content());
             popAlpha(ctx, alpha);
         }
     }
 
     /**
-     * 换物过渡里的一份内容：按 {@code alpha * swapAlpha} 设不透明度、沿排列方向推
+     * 换物过渡里的<b>图标层</b>：按 {@code alpha * swapAlpha} 设不透明度、沿排列方向推
      * {@code shift} 个步距后画出来（{@code shift} 为 -1 时正好落在「上一个格子」的位置）。
      *
      * @param alpha 这一格的淡入淡出系数（两份内容共用的外层系数）
      */
-    private static void drawShifted(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
-                                    CellContent content, float swapAlpha, float shift, boolean horizontal,
-                                    int pitch, float alpha) {
+    private static void drawShiftedIcon(class_332 ctx, DuraHudConfig cfg, CellContent content,
+                                        float swapAlpha, float shift, boolean horizontal, int pitch,
+                                        float alpha) {
         float a = alpha * swapAlpha;
         if (a <= 0.01F) {
             return;   // 完全透明的替身没必要画（也省掉一次物品渲染）
         }
         int offset = Math.round(shift * pitch);
         pushAlpha(ctx, a);
-        drawCellContent(ctx, mc, cfg, layout, content,
-                horizontal ? offset : 0, horizontal ? 0 : offset);
+        drawIconLayer(ctx, cfg, content, horizontal ? offset : 0, horizontal ? 0 : offset);
         popAlpha(ctx, a);
     }
 
     /**
-     * 一格的内容：图标 / 耐久条 / 选中框 / 数值。不透明度由调用者包在外面 ——
-     * 早退之前一定要先 popAlpha，否则这一格的半透明会漏给后面所有格子。
+     * 图标层：物品图标与濒危高亮框。这是换物过渡里<b>唯一</b>跟着位移走的部分 ——
+     * 高亮框圈的是「这一件东西」，所以它跟图标一起滑。
      *
-     * <p>调用者负责外层不透明度：没有过渡时也要先 pushAlpha 再进来（2.0.3 曾漏掉这一步，
-     * 表现为只有边框在淡、内容硬跳）。</p>
+     * <p>调用者负责外层不透明度：早退之前一定要先 popAlpha，否则这一格的半透明会漏给
+     * 后面所有格子（2.0.3 曾漏掉这一步，表现为只有边框在淡、内容硬跳）。</p>
      *
      * @param dx 换物滑入的横向位移（已缩放、已取整；没有过渡时是 0）
      * @param dy 换物滑入的纵向位移
      */
-    private static void drawCellContent(class_332 ctx, class_310 mc, DuraHudConfig cfg,
-                                        HudLayout layout, CellContent content, int dx, int dy) {
+    private static void drawIconLayer(class_332 ctx, DuraHudConfig cfg, CellContent content, int dx, int dy) {
         if (cfg.showItemIcons) {
             ctx.method_51427(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
         }
+        if (content.hasBar() && cfg.highlightCritical && Severity.of(cfg, content.ratio()) == Severity.CRIT) {
+            Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
+                    (Metrics.CELL_H - Metrics.SELECT_H) / 2 + dy);
+        }
+    }
+
+    /**
+     * 仪表层：耐久条与数值。这一层<b>不参与换物过渡的位移与交叉淡化</b> —— 条与数字永远画在
+     * 格子自己的位置上，同一个格子换东西时变的只是长度与数字（{@link CellContent#displayRatio()}
+     * 的加减动画），不会像图标那样滑过去。
+     *
+     * <p>过渡期间也只画<b>当前</b>这一份（{@code entry.content()}）：离场那份替身已经把显示值
+     * 冻住了，两份都画就会在原地叠出两个数字、两条长度不同的条。</p>
+     */
+    private static void drawGaugeLayer(class_332 ctx, class_310 mc, DuraHudConfig cfg,
+                                       HudLayout layout, CellContent content) {
         Severity severity = Severity.of(cfg, content.ratio());
         if (content.hasBar()) {
-            drawBar(ctx, layout.barOffsetX() + dx, layout.barOffsetY() + dy,
-                    layout.barLength(), content.displayRatio(), severity);
-            if (cfg.highlightCritical && severity == Severity.CRIT) {
-                Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
-                        (Metrics.CELL_H - Metrics.SELECT_H) / 2 + dy);
-            }
+            drawBar(ctx, layout.barOffsetX(), layout.barOffsetY(), layout.barLength(),
+                    content.displayRatio(), severity);
         }
         if (!layout.hasText()) {
             return;
@@ -192,8 +211,7 @@ public final class HudRenderer {
         String label = content.label(cfg, mc.field_1772);
         if (!label.isEmpty()) {
             drawOutlinedText(ctx, mc.field_1772, label,
-                    layout.textOffsetX(content.labelWidth()) + dx,
-                    layout.textOffsetY() + dy, severity.textColor);
+                    layout.textOffsetX(content.labelWidth()), layout.textOffsetY(), severity.textColor);
         }
     }
 
