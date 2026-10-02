@@ -154,23 +154,26 @@ public final class DurabilityEntry {
         if (!cfg.animateCells) {
             swap.clear();
             if (filled) {
-                content.capture(this);
+                content.capture(this, cfg, dtSeconds);
             }
             fade = filled ? 1.0F : 0.0F;
             return;
         }
 
         if (!filled) {
-            // 东西没了：换物过渡没意义了，交给普通淡出（格子淡完就消失，后面的格子顶上来）。
-            swap.clear();
+            // 东西没了：快照不再刷新（最后一份自然成了淡出用的替身），但正在进行的换物过渡
+            // 照常走完 —— 半路掐断会让已经推进到一半的进场内容突然弹回原位、不透明度跳回 1。
+            if (swap.active() && swap.advance(dtSeconds, cfg.animationMillis)) {
+                swap.clear();
+            }
         } else if (!swap.active()) {
             // 格子还在淡入淡出的半路上时就别插一脚：那点时间本来就短，交给 fade 管更干净。
             if (sameContentAsCurrent() || fade < 1.0F) {
-                content.capture(this);
+                content.capture(this, cfg, dtSeconds);
             } else {
                 outgoing.copyFrom(content);   // 现在这份内容留作离场的替身
                 swap.begin();
-                content.capture(this);        // 新内容立刻接手：它在上一格的位置，还完全透明
+                content.capture(this, cfg, dtSeconds);   // 新内容立刻接手：它在上一格的位置
             }
         } else {
             if (!sameContentAsCurrent()) {
@@ -178,7 +181,7 @@ public final class DurabilityEntry {
                 outgoing.copyFrom(content);
                 swap.begin();
             }
-            content.capture(this);
+            content.capture(this, cfg, dtSeconds);
             if (swap.advance(dtSeconds, cfg.animationMillis)) {
                 swap.clear();   // 走完这一帧画出来就是静止态（位移归位、不透明度各就各位）
             }

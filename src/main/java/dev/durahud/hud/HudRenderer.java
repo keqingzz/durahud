@@ -133,7 +133,11 @@ public final class HudRenderer {
             drawShifted(ctx, mc, cfg, layout, entry.content(), swap.incomingAlpha(), swap.incomingShift(),
                     horizontal, pitch, alpha);
         } else {
+            // 本格的不透明度必须包在内容外面：只给边框设 alpha、内容直接画，就是 2.0.3 的回归
+            // —— 空手 ↔ 工具来回切时图标、耐久条、数字都是硬跳出来的，只有边框在淡。
+            pushAlpha(ctx, alpha);
             drawCellContent(ctx, mc, cfg, layout, entry.content(), 0, 0);
+            popAlpha(ctx, alpha);
         }
     }
 
@@ -161,6 +165,9 @@ public final class HudRenderer {
      * 一格的内容：图标 / 耐久条 / 选中框 / 数值。不透明度由调用者包在外面 ——
      * 早退之前一定要先 popAlpha，否则这一格的半透明会漏给后面所有格子。
      *
+     * <p>调用者负责外层不透明度：没有过渡时也要先 pushAlpha 再进来（2.0.3 曾漏掉这一步，
+     * 表现为只有边框在淡、内容硬跳）。</p>
+     *
      * @param dx 换物滑入的横向位移（已缩放、已取整；没有过渡时是 0）
      * @param dy 换物滑入的纵向位移
      */
@@ -172,7 +179,7 @@ public final class HudRenderer {
         Severity severity = Severity.of(cfg, content.ratio());
         if (content.hasBar()) {
             drawBar(ctx, layout.barOffsetX() + dx, layout.barOffsetY() + dy,
-                    layout.barLength(), content.ratio(), severity);
+                    layout.barLength(), content.displayRatio(), severity);
             if (cfg.highlightCritical && severity == Severity.CRIT) {
                 Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
                         (Metrics.CELL_H - Metrics.SELECT_H) / 2 + dy);
