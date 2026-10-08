@@ -30,7 +30,7 @@ import java.nio.file.Path;
 public final class ConfigFile {
 
     /** 当前配置格式版本。字段增删都要 +1，并在 migrate 里补一条升级路径。 */
-    public static final int CONFIG_VERSION = 6;
+    public static final int CONFIG_VERSION = 7;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "durahud.json";
@@ -222,6 +222,10 @@ public final class ConfigFile {
             root.remove("showPercent");
             root.remove("compactCells");
         }
+        if (from < 7) {
+            // v6 → v7：新增 valueOffsetY（缺省 0 = 单行数值贴紧耐久条）。没有键要搬 ——
+            // 老文件读出来就是 0，正是不想改动任何人观感的默认值。
+        }
         root.addProperty(VERSION_KEY, CONFIG_VERSION);
         DuraHudClient.LOGGER.info("[DuraHUD] 配置已从版本 {} 升级到 {}。", from, CONFIG_VERSION);
         return true;
@@ -285,6 +289,8 @@ public final class ConfigFile {
         cfg.hideFull = json.b("hideFull", cfg.hideFull);
         cfg.showEmptySlots = json.b("showEmptySlots", cfg.showEmptySlots);
         cfg.valueDisplay = json.e("valueDisplay", ValueDisplay.class, cfg.valueDisplay);
+        // 刻意不在这里夹取：夹取属于 sanitize()。read 的职责是「有才覆盖」，逐字段往返才可验证。
+        cfg.valueOffsetY = json.i("valueOffsetY", cfg.valueOffsetY);
         cfg.showSlotFrames = json.b("showSlotFrames", cfg.showSlotFrames);
         cfg.showItemIcons = json.b("showItemIcons", cfg.showItemIcons);
         cfg.animateCells = json.b("animateCells", cfg.animateCells);

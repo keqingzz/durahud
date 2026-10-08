@@ -1,7 +1,7 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.class_1799;
+import net.minecraft.item.ItemStack;
 
 /**
  * HUD 上的一个格子：要么属于某个固定原版槽位（盔甲/主手/副手），
@@ -35,7 +35,7 @@ public final class DurabilityEntry {
     /** null 表示这是额外装备（饰品），没有原版槽位身份。 */
     private final Kind kind;
     private final boolean armor;
-    private class_1799 stack;
+    private ItemStack stack;
     /** 本帧要画的内容快照；内容消失后保留最后一份，作为淡出用的替身。 */
     private final CellContent content = new CellContent();
     /** 换物过渡里「正在离场」的那一份快照（只有过渡进行中才有意义，见 {@link SwapState}）。 */
@@ -53,14 +53,14 @@ public final class DurabilityEntry {
     private boolean onScreen;
     private boolean onScreenNow;
 
-    public DurabilityEntry(Kind kind, class_1799 stack) {
+    public DurabilityEntry(Kind kind, ItemStack stack) {
         this.kind = kind;
         this.armor = kind != null && kind.armor;
         this.stack = stack;
     }
 
     /** 额外装备槽（Trinkets 等）里的物品。 */
-    public static DurabilityEntry extra(class_1799 stack) {
+    public static DurabilityEntry extra(ItemStack stack) {
         return new DurabilityEntry(null, stack);
     }
 
@@ -68,11 +68,11 @@ public final class DurabilityEntry {
         return kind;
     }
 
-    public class_1799 stack() {
+    public ItemStack stack() {
         return stack;
     }
 
-    public void setStack(class_1799 stack) {
+    public void setStack(ItemStack stack) {
         this.stack = stack;
     }
 
@@ -251,15 +251,15 @@ public final class DurabilityEntry {
      * 也不算换物 —— 空槽位的进出由 {@code fade} 负责，别在这里插一脚。</p>
      */
     private boolean sameContentAsCurrent() {
-        class_1799 drawn = content.stack();
-        if (drawn.method_7960() || isEmpty()) {
+        ItemStack drawn = content.stack();
+        if (drawn.isEmpty() || isEmpty()) {
             return true;
         }
-        return drawn.method_7909() == stack.method_7909();
+        return drawn.getItem() == stack.getItem();
     }
 
     boolean isEmpty() {
-        return stack == null || stack.method_7960();
+        return stack == null || stack.isEmpty();
     }
 
     /** 是否要在这个格子里画内容（物品图标/耐久条/文字）。包内可见：只给本包与 {@link CellContent} 用。 */
@@ -310,15 +310,15 @@ public final class DurabilityEntry {
         if (isEmpty()) {
             return false;
         }
-        return stack.method_7936() > 0 || stack.method_31578();
+        return stack.getMaxDamage() > 0 || stack.isItemBarVisible();
     }
 
     int max() {
-        return stack.method_7936();
+        return stack.getMaxDamage();
     }
 
     int remaining() {
-        return Math.max(0, max() - stack.method_7919());
+        return Math.max(0, max() - stack.getDamage());
     }
 
     /** 是否能显示「剩余/上限」这种精确数值（没有耐久上限时只能显示百分比）。 */
@@ -330,17 +330,17 @@ public final class DurabilityEntry {
     float ratio() {
         int max = max();
         if (max > 0) {
-            return clamp((float) (max - stack.method_7919()) / (float) max);
+            return clamp((float) (max - stack.getDamage()) / (float) max);
         }
-        if (stack.method_31578()) {
-            return clamp(stack.method_31579() / 13.0F);
+        if (stack.isItemBarVisible()) {
+            return clamp(stack.getItemBarStep() / 13.0F);
         }
         return 1.0F;
     }
 
     boolean isFull() {
         int max = max();
-        return max <= 0 || stack.method_7919() <= 0;
+        return max <= 0 || stack.getDamage() <= 0;
     }
 
     private static float clamp(float value) {

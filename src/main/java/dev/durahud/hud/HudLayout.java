@@ -47,6 +47,7 @@ public final class HudLayout {
     private int textOffsetY;
     private int textSkip;
     private int textBlockH = Metrics.TEXT_H;
+    private int valueOffsetY;
 
     private HudLayout() {
     }
@@ -89,6 +90,10 @@ public final class HudLayout {
         // 跟着显示模式变，贴着上下边的数值就会把整排格子推上推下——与「预留宽度是常量」
         // 同一条纪律。
         textBlockH = Metrics.TEXT_H * 2;
+        // 数值的纵向微调：只挪数字，槽位、格子和整块尺寸都不参与。sanitize() 之外的路径
+        // （拖动中的滑条、直接改字段的测试）也要安全，所以这里再夹一次。
+        valueOffsetY = Math.max(-DuraHudConfig.VALUE_OFFSET_LIMIT,
+                Math.min(DuraHudConfig.VALUE_OFFSET_LIMIT, cfg.valueOffsetY));
 
         // 各方向的「附着深度」：同侧时先放条、再放文本，顺次排开
         int above = 0;
@@ -329,11 +334,33 @@ public final class HudLayout {
     }
 
     /**
-     * 只画一行时，这一行在<b>两行高</b>槽位里的纵向偏移：居中。
+     * 数值的纵向微调（缩放前的像素，正数向下）：渲染侧把它加到槽位里的行坐标上。
      *
-     * <p>于是切换显示模式时格子与整块 HUD 都不动，只有槽位里的数字自己换位置。</p>
+     * <p>它<b>不进几何</b>：localW/localH、格子位置与整块尺寸都不变，槽位仍按两行预留 ——
+     * 微调只是让数字在自己的槽位里挪一挪（见 README 7.4 / 10 节）。</p>
+     */
+    public int valueOffsetY() {
+        return valueOffsetY;
+    }
+
+    /**
+     * 只画一行时，这一行在<b>两行高</b>槽位里的纵向偏移：贴住自己那一侧（靠条/格子的一侧）。
+     *
+     * <p>槽位高度恒定是 2.1.3 定下的纪律，但那之后单行在槽位里居中，「百分比」的数字就比
+     * 2.1.2 及以前离耐久条远了 4px。现在按数值所在的一侧贴边：ABOVE 贴槽位下沿（贴条）、
+     * BELOW 贴上沿；左右两侧仍然纵向居中 —— 槽位偏移本来就是 (CELL_H - 18 + 1) / 2 = 2，
+     * 加 5 得 7，与 2.1.2 的 (CELL_H - TEXT_H + 1) / 2 = 7 完全一致。</p>
      */
     public int singleLineOffset() {
+        if (textSide == null) {
+            return 0;
+        }
+        if (textSide == BarSide.ABOVE) {
+            return textBlockH - Metrics.TEXT_H;
+        }
+        if (textSide == BarSide.BELOW) {
+            return 0;
+        }
         return (textBlockH - Metrics.TEXT_H + 1) / 2;
     }
 

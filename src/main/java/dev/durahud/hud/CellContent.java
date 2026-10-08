@@ -1,8 +1,8 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.class_1799;
-import net.minecraft.class_327;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.item.ItemStack;
 
 /**
  * 一个格子「本帧要画的东西」的快照：物品图标 + 耐久条 + 数值。
@@ -26,7 +26,7 @@ import net.minecraft.class_327;
  */
 public final class CellContent {
 
-    private class_1799 stack = class_1799.field_8037;
+    private ItemStack stack = ItemStack.EMPTY;
     private boolean bar;
     private float ratio = 1.0F;
     private boolean numeric;
@@ -74,7 +74,7 @@ public final class CellContent {
      * 加减动画则<b>就地冻住</b>：离场那条条/那个数字保持它离开时的长度，不再跟着新物品变。</p>
      */
     void copyFrom(CellContent other) {
-        this.stack = other.stack.method_7972();
+        this.stack = other.stack.copy();
         this.bar = other.bar;
         this.ratio = other.ratio;
         this.numeric = other.numeric;
@@ -84,7 +84,7 @@ public final class CellContent {
         this.labelValid = false;
     }
 
-    public class_1799 stack() {
+    public ItemStack stack() {
         return stack;
     }
 
@@ -128,16 +128,16 @@ public final class CellContent {
      *
      * @param font 用来量字宽；即使缓存命中也不会用到它
      */
-    public String label(DuraHudConfig cfg, class_327 font) {
+    public String label(DuraHudConfig cfg, TextRenderer font) {
         int key = fingerprint();
         if (!labelValid || key != labelKey || cfg.valueDisplay != labelDisplay) {
             labelDisplay = cfg.valueDisplay;
             labelKey = key;
             labelValid = true;
             label = CellLabel.text(cfg.valueDisplay, bar, numeric, displayRemaining(), max, displayPercent());
-            labelWidth = label.isEmpty() ? 0 : font.method_1727(label);
+            labelWidth = label.isEmpty() ? 0 : font.getWidth(label);
             secondLabel = CellLabel.secondLine(cfg.valueDisplay, numeric, max);
-            secondLabelWidth = secondLabel.isEmpty() ? 0 : font.method_1727(secondLabel);
+            secondLabelWidth = secondLabel.isEmpty() ? 0 : font.getWidth(secondLabel);
         }
         return label;
     }

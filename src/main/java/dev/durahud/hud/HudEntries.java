@@ -4,10 +4,10 @@ import dev.durahud.config.DuraHudConfig;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import net.minecraft.class_1657;
-import net.minecraft.class_1661;
-import net.minecraft.class_1799;
-import net.minecraft.class_310;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
 
 /**
  * 当前要画的条目列表：先摆 4 个盔甲格，再摆额外装备槽（饰品），最后才是主手/副手 ——
@@ -42,7 +42,7 @@ public final class HudEntries {
     private boolean extrasIdle = true;
 
     /** 本帧的额外槽物品（每 tick 至多向 Trinkets 要一次，槽位内容只会在 tick 里变）。 */
-    private List<class_1799> extraStacks = Collections.emptyList();
+    private List<ItemStack> extraStacks = Collections.emptyList();
     private long extraStacksTick = Long.MIN_VALUE;
 
     private final DurabilityEntry[] view = new DurabilityEntry[ORDER.length + MAX_EXTRA];
@@ -50,10 +50,10 @@ public final class HudEntries {
 
     public HudEntries() {
         for (int i = 0; i < ORDER.length; i++) {
-            all[i] = new DurabilityEntry(ORDER[i], class_1799.field_8037);
+            all[i] = new DurabilityEntry(ORDER[i], ItemStack.EMPTY);
         }
         for (int i = 0; i < MAX_EXTRA; i++) {
-            extraPool[i] = DurabilityEntry.extra(class_1799.field_8037);
+            extraPool[i] = DurabilityEntry.extra(ItemStack.EMPTY);
             extraSlot[i] = -1;
         }
     }
@@ -84,11 +84,11 @@ public final class HudEntries {
      *
      * @param dtSeconds 距上一帧的秒数，交给条目推进淡入淡出
      */
-    public void refresh(class_310 mc, DuraHudConfig cfg, float dtSeconds) {
-        class_1657 player = mc.field_1724;
-        class_1661 inventory = player == null ? null : player.method_31548();
+    public void refresh(MinecraftClient mc, DuraHudConfig cfg, float dtSeconds) {
+        PlayerEntity player = mc.player;
+        PlayerInventory inventory = player == null ? null : player.getInventory();
         for (DurabilityEntry entry : all) {
-            entry.setStack(inventory == null ? class_1799.field_8037 : stackOf(player, inventory, entry.kind()));
+            entry.setStack(inventory == null ? ItemStack.EMPTY : stackOf(player, inventory, entry.kind()));
             entry.advance(dtSeconds, cfg);
         }
         refreshExtra(player, cfg, dtSeconds);
@@ -101,10 +101,10 @@ public final class HudEntries {
      * <p>认领顺序是「同一个栈对象 -> 同一槽位上的同类物品 -> 空闲格 -> 最接近淡完的那一格」，
      * 所以饰品集合变化时，只有真正变动的那几格会淡入 / 淡出，其余格子保持自己的状态。</p>
      */
-    private void refreshExtra(class_1657 player, DuraHudConfig cfg, float dtSeconds) {
+    private void refreshExtra(PlayerEntity player, DuraHudConfig cfg, float dtSeconds) {
         if (player != null && cfg.showTrinkets) {
-            if (player.field_6012 != extraStacksTick) {
-                extraStacksTick = player.field_6012;
+            if (player.age != extraStacksTick) {
+                extraStacksTick = player.age;
                 extraStacks = ExtraSlots.collect(player);
             }
         } else if (!extraStacks.isEmpty()) {
@@ -116,8 +116,8 @@ public final class HudEntries {
             return;   // 快路径：没东西要认领、池子也全空闲，这一帧不必碰池子（见 extrasIdle）
         }
         for (int slot = 0; slot < extraStacks.size() && slot < MAX_EXTRA; slot++) {
-            class_1799 stack = extraStacks.get(slot);
-            if (stack == null || stack.method_7960()) {
+            ItemStack stack = extraStacks.get(slot);
+            if (stack == null || stack.isEmpty()) {
                 continue;
             }
             int index = claim(stack, slot);
@@ -131,7 +131,7 @@ public final class HudEntries {
         boolean busy = false;
         for (int i = 0; i < MAX_EXTRA; i++) {
             if (!extraClaimed[i]) {
-                extraPool[i].setStack(class_1799.field_8037);   // 物品没了：开始淡出，槽位号先留着
+                extraPool[i].setStack(ItemStack.EMPTY);   // 物品没了：开始淡出，槽位号先留着
             }
             extraPool[i].advance(dtSeconds, cfg);
             // 过渡也算「忙」：淡出结束得比过渡早时，这一格还得继续把过渡推进完（见 advanceEmpty）。
@@ -145,14 +145,14 @@ public final class HudEntries {
     }
 
     /** 给一件饰品挑一格；挑不到（池子满了）返回 -1。 */
-    private int claim(class_1799 stack, int slot) {
+    private int claim(ItemStack stack, int slot) {
         for (int i = 0; i < MAX_EXTRA; i++) {
             if (!extraClaimed[i] && extraPool[i].stack() == stack) {
                 return i;                                 // 还是那个栈对象：绝大多数帧都走这里
             }
         }
         for (int i = 0; i < MAX_EXTRA; i++) {
-            if (!extraClaimed[i] && extraSlot[i] == slot && class_1799.method_7973(extraPool[i].stack(), stack)) {
+            if (!extraClaimed[i] && extraSlot[i] == slot && ItemStack.areEqual(extraPool[i].stack(), stack)) {
                 return i;                                 // 同一槽位上的同一件物品（栈对象被换过）
             }
         }
@@ -202,7 +202,7 @@ public final class HudEntries {
         for (int pass = 0; pass < 2; pass++) {
             for (int slot = 0; slot < MAX_EXTRA; slot++) {
                 for (int i = 0; i < MAX_EXTRA; i++) {
-                    boolean live = !extraPool[i].stack().method_7960();
+                    boolean live = !extraPool[i].stack().isEmpty();
                     if ((pass == 0) == live && extraSlot[i] == slot && extraPool[i].occupiesCell(cfg)) {
                         view[count++] = extraPool[i];
                     }
@@ -211,14 +211,14 @@ public final class HudEntries {
         }
     }
 
-    private static class_1799 stackOf(class_1657 player, class_1661 inventory, DurabilityEntry.Kind kind) {
+    private static ItemStack stackOf(PlayerEntity player, PlayerInventory inventory, DurabilityEntry.Kind kind) {
         return switch (kind) {
-            case MAINHAND -> player.method_6047();
-            case OFFHAND -> player.method_6079();
-            case HELMET -> inventory.method_7372(3);
-            case CHESTPLATE -> inventory.method_7372(2);
-            case LEGGINGS -> inventory.method_7372(1);
-            case BOOTS -> inventory.method_7372(0);
+            case MAINHAND -> player.getMainHandStack();
+            case OFFHAND -> player.getOffHandStack();
+            case HELMET -> inventory.getArmorStack(3);
+            case CHESTPLATE -> inventory.getArmorStack(2);
+            case LEGGINGS -> inventory.getArmorStack(1);
+            case BOOTS -> inventory.getArmorStack(0);
         };
     }
 }

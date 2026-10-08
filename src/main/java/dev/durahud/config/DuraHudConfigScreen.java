@@ -1,21 +1,22 @@
 package dev.durahud.config;
 
 import dev.durahud.DuraHudClient;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
-import net.minecraft.class_124;
-import net.minecraft.class_2561;
-import net.minecraft.class_310;
-import net.minecraft.class_332;
-import net.minecraft.class_339;
-import net.minecraft.class_4185;
-import net.minecraft.class_437;
-import net.minecraft.class_5250;
-import net.minecraft.class_7919;
 
 /**
  * 设置界面：选项按用途分成 6 页（分页标签竖排在窗口左侧、垂直居中），每页最多 6 行。
@@ -27,7 +28,7 @@ import net.minecraft.class_7919;
  * <p>每页的选项先登记成 {@link Option}（拿到位置与尺寸之后再造成控件），因此行数、列数、
  * 行高可以一次算准，不需要「先造再挪」。控件全部是原版控件（ButtonWidget / SliderWidget）。</p>
  */
-public class DuraHudConfigScreen extends class_437 {
+public class DuraHudConfigScreen extends Screen {
 
     /** 分页；顺序即标签顺序，语言键为 {@code durahud.tab.<key>}。 */
     private enum Tab {
@@ -44,23 +45,23 @@ public class DuraHudConfigScreen extends class_437 {
             this.key = key;
         }
 
-        class_5250 label() {
-            return class_2561.method_43471("durahud.tab." + key);
+        MutableText label() {
+            return Text.translatable("durahud.tab." + key);
         }
     }
 
     private static final Tab[] TABS = Tab.values();
 
-    private final class_437 parent;
-    /** 当前配置：在 {@link #method_25426()} 里取，避免在任何界面打开之前构造本界面时拿到 null。 */
+    private final Screen parent;
+    /** 当前配置：在 {@link #init()} 里取，避免在任何界面打开之前构造本界面时拿到 null。 */
     private DuraHudConfig cfg;
     /** 当前页的选项（登记顺序 = 布局顺序）。 */
     private final List<Option> options = new ArrayList<>();
     /** 造出来的控件，与 {@link #options} 一一对应。 */
-    private final List<class_339> widgets = new ArrayList<>();
+    private final List<ClickableWidget> widgets = new ArrayList<>();
     private Tab tab = Tab.DISPLAY;
     private ScreenLayout layout;
-    private class_2561 status;
+    private Text status;
     /** 需要置灰的行下标（-1 = 本页没有）；置灰条件见 {@link #refreshDependencies()}。 */
     private int wornNonDurableRow = -1;
     private int animationRow = -1;
@@ -71,19 +72,19 @@ public class DuraHudConfigScreen extends class_437 {
     /** 界面里改过东西：关屏时统一落盘（滑条拖一次会触发上百次值变化）。 */
     private boolean dirty;
 
-    public DuraHudConfigScreen(class_437 parent) {
-        super(class_2561.method_43471("durahud.config.title").method_10852(class_2561.method_43470(" v" + DuraHudClient.version())));
+    public DuraHudConfigScreen(Screen parent) {
+        super(Text.translatable("durahud.config.title").append(Text.literal(" v" + DuraHudClient.version())));
         this.parent = parent;
     }
 
     /** 一行选项：给最终位置与尺寸，造出控件。 */
     @FunctionalInterface
     private interface Option {
-        class_339 create(int x, int y, int width, int height);
+        ClickableWidget create(int x, int y, int width, int height);
     }
 
     @Override
-    protected void method_25426() {
+    protected void init() {
         cfg = DuraHudClient.config();
         cfg.sanitize();   // 手改过的越界值先夹回来，滑条才不会显示 200 而配置里是 100000
         options.clear();
@@ -94,12 +95,12 @@ public class DuraHudConfigScreen extends class_437 {
         critSlider = null;
         buildPage();
 
-        this.layout = ScreenLayout.of(this.field_22789, this.field_22790, options.size(), TABS.length);
+        this.layout = ScreenLayout.of(this.width, this.height, options.size(), TABS.length);
         for (int i = 0; i < options.size(); i++) {
-            class_339 widget = options.get(i).create(
+            ClickableWidget widget = options.get(i).create(
                     layout.columnX(layout.columnOf(i)), layout.rowY(i), layout.colW, layout.rowH);
             widgets.add(widget);
-            method_37063(widget);
+            addDrawableChild(widget);
         }
         critSlider = sliderAt(critRow);
         addTabs();
@@ -118,18 +119,18 @@ public class DuraHudConfigScreen extends class_437 {
         if (row < 0 || row >= widgets.size()) {
             return null;
         }
-        class_339 widget = widgets.get(row);
+        ClickableWidget widget = widgets.get(row);
         return widget instanceof NumberSliderWidget slider ? slider : null;
     }
 
-    /** 改动先只标脏：{@link #method_25432()} 里统一夹取并落盘。 */
+    /** 改动先只标脏：{@link #removed()} 里统一夹取并落盘。 */
     private void markDirty() {
         dirty = true;
     }
 
     @Override
-    public void method_25432() {
-        super.method_25432();
+    public void removed() {
+        super.removed();
         if (dirty) {
             cfg.sanitize();
             cfg.save();
@@ -200,12 +201,15 @@ public class DuraHudConfigScreen extends class_437 {
                 DuraHudConfig.ValuePlacement.values(), cfg.valuePlacement, v -> cfg.valuePlacement = v);
         cycle("durahud.option.valueDisplay", "durahud.valueDisplay", DuraHudConfig.ValueDisplay.values(),
                 cfg.valueDisplay, v -> cfg.valueDisplay = v);
+        slider("durahud.option.valueOffsetY", -(double) DuraHudConfig.VALUE_OFFSET_LIMIT,
+                (double) DuraHudConfig.VALUE_OFFSET_LIMIT, cfg.valueOffsetY, true, false,
+                v -> cfg.valueOffsetY = (int) v, "durahud.tip.valueOffsetY");
         toggle("durahud.option.showSlotFrames", cfg.showSlotFrames, v -> cfg.showSlotFrames = v, null);
         toggle("durahud.option.showItemIcons", cfg.showItemIcons, v -> cfg.showItemIcons = v, null);
     }
 
     /**
-     * 警示页：两个阈值与濒危高亮。{@code critRow} 记下第二行，{@link #method_25426()} 据此抓出 crit
+     * 警示页：两个阈值与濒危高亮。{@code critRow} 记下第二行，{@link #init()} 据此抓出 crit
      * 滑条（{@link #setWarn(int)} 改 warn 时要同步它的显示）。
      */
     private void buildWarningPage() {
@@ -246,13 +250,13 @@ public class DuraHudConfigScreen extends class_437 {
     private void toggle(String labelKey, boolean value, Consumer<Boolean> setter, String tipKey) {
         options.add((x, y, width, height) -> {
             boolean[] state = { value };
-            class_4185 widget = class_4185.method_46430(onOff(labelKey, state[0]), button -> {
+            ButtonWidget widget = ButtonWidget.builder(onOff(labelKey, state[0]), button -> {
                 state[0] = !state[0];
                 setter.accept(state[0]);
                 markDirty();
-                button.method_25355(onOff(labelKey, state[0]));
+                button.setMessage(onOff(labelKey, state[0]));
                 refreshDependencies();
-            }).method_46434(x, y, width, height).method_46431();
+            }).dimensions(x, y, width, height).build();
             applyTip(widget, tipKey);
             return widget;
         });
@@ -262,13 +266,13 @@ public class DuraHudConfigScreen extends class_437 {
                                            Consumer<T> setter) {
         options.add((x, y, width, height) -> {
             int[] index = { current.ordinal() };
-            class_4185 widget = class_4185.method_46430(enumLabel(labelKey, valuePrefix, values[index[0]]), button -> {
+            ButtonWidget widget = ButtonWidget.builder(enumLabel(labelKey, valuePrefix, values[index[0]]), button -> {
                 index[0] = (index[0] + 1) % values.length;
                 T next = values[index[0]];
                 setter.accept(next);
                 markDirty();
-                button.method_25355(enumLabel(labelKey, valuePrefix, next));
-            }).method_46434(x, y, width, height).method_46431();
+                button.setMessage(enumLabel(labelKey, valuePrefix, next));
+            }).dimensions(x, y, width, height).build();
             return widget;
         });
     }
@@ -284,9 +288,9 @@ public class DuraHudConfigScreen extends class_437 {
         });
     }
 
-    private static void applyTip(class_339 widget, String tipKey) {
+    private static void applyTip(ClickableWidget widget, String tipKey) {
         if (tipKey != null) {
-            widget.method_47400(class_7919.method_47407(class_2561.method_43471(tipKey)));
+            widget.setTooltip(Tooltip.of(Text.translatable(tipKey)));
         }
     }
 
@@ -294,42 +298,42 @@ public class DuraHudConfigScreen extends class_437 {
     // 分页标签与底部按钮
     // ------------------------------------------------------------------
 
-    /** 当前页的标签加粗，并在下面画一条高亮线（见 {@link #method_25394}），比做成禁用态更清楚。 */
+    /** 当前页的标签加粗，并在下面画一条高亮线（见 {@link #render}），比做成禁用态更清楚。 */
     private void addTabs() {
         for (int i = 0; i < TABS.length; i++) {
             Tab target = TABS[i];
-            class_5250 label = target.label();
+            MutableText label = target.label();
             if (target == tab) {
-                label.method_27692(class_124.field_1067);
+                label.formatted(Formatting.BOLD);
             }
-            method_37063(class_4185.method_46430(label, button -> {
+            addDrawableChild(ButtonWidget.builder(label, button -> {
                 if (this.tab != target) {
                     this.tab = target;
                     this.status = null;
-                    this.method_41843();
+                    this.clearAndInit();
                 }
-            }).method_46434(layout.tabX(), layout.tabY(i), layout.tabW, layout.tabH).method_46431());
+            }).dimensions(layout.tabX(), layout.tabY(i), layout.tabW, layout.tabH).build());
         }
     }
 
     /** 底部一行四个按钮：宽度按选项块的总宽平分，所以窄窗口也不会溢出。 */
     private void addBottomButtons() {
-        method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.reset"), button -> {
+        addDrawableChild(ButtonWidget
+                .builder(Text.translatable("durahud.button.reset"), button -> {
                     cfg.resetToDefaults();
                     cfg.save();
-                    this.method_41843();
+                    this.clearAndInit();
                 })
-                .method_46434(layout.buttonX(0), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
-        method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.export"), button -> this.exportPreset())
-                .method_46434(layout.buttonX(1), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
-        method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.import"), button -> this.importPreset())
-                .method_46434(layout.buttonX(2), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
-        method_37063(class_4185
-                .method_46430(class_2561.method_43471("durahud.button.done"), button -> this.method_25419())
-                .method_46434(layout.buttonX(3), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).method_46431());
+                .dimensions(layout.buttonX(0), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).build());
+        addDrawableChild(ButtonWidget
+                .builder(Text.translatable("durahud.button.export"), button -> this.exportPreset())
+                .dimensions(layout.buttonX(1), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).build());
+        addDrawableChild(ButtonWidget
+                .builder(Text.translatable("durahud.button.import"), button -> this.importPreset())
+                .dimensions(layout.buttonX(2), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).build());
+        addDrawableChild(ButtonWidget
+                .builder(Text.translatable("durahud.button.done"), button -> this.close())
+                .dimensions(layout.buttonX(3), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).build());
     }
 
     /**
@@ -343,7 +347,7 @@ public class DuraHudConfigScreen extends class_437 {
 
     private void setActive(int index, boolean active) {
         if (index >= 0 && index < widgets.size()) {
-            widgets.get(index).field_22763 = active;
+            widgets.get(index).active = active;
         }
     }
 
@@ -358,23 +362,23 @@ public class DuraHudConfigScreen extends class_437 {
         DuraHudConfig snapshot = new DuraHudConfig();
         snapshot.copyFrom(cfg);
         if (!PresetDialogs.available()) {
-            this.status = class_2561.method_43469(ConfigFile.exportPreset(snapshot)
+            this.status = Text.translatable(ConfigFile.exportPreset(snapshot)
                     ? "durahud.preset.exported" : "durahud.preset.failed", ConfigFile.defaultPresetName());
             return;
         }
-        this.status = class_2561.method_43471("durahud.preset.choosing");
+        this.status = Text.translatable("durahud.preset.choosing");
         File directory = dialogDirectory();
         String defaultName = ConfigFile.defaultPresetName();
-        String title = class_2561.method_43471("durahud.button.export").getString();
+        String title = Text.translatable("durahud.button.export").getString();
         Thread worker = new Thread(() -> {
             Path chosen = PresetDialogs.chooseSave(directory, defaultName, title);
             if (chosen == null) {
-                runOnClient(() -> this.status = class_2561.method_43471("durahud.preset.cancelled"));
+                runOnClient(() -> this.status = Text.translatable("durahud.preset.cancelled"));
                 return;
             }
             boolean ok = ConfigFile.exportTo(chosen, snapshot);
             String name = chosen.getFileName().toString();
-            runOnClient(() -> this.status = class_2561.method_43469(
+            runOnClient(() -> this.status = Text.translatable(
                     ok ? "durahud.preset.exported" : "durahud.preset.failed", name));
         }, "DuraHUD-preset-export");
         worker.setDaemon(true);
@@ -392,14 +396,14 @@ public class DuraHudConfigScreen extends class_437 {
             applyImported(ConfigFile.importPreset(), ConfigFile.defaultPresetName());
             return;
         }
-        this.status = class_2561.method_43471("durahud.preset.choosing");
+        this.status = Text.translatable("durahud.preset.choosing");
         File directory = dialogDirectory();
         String defaultName = ConfigFile.defaultPresetName();
-        String title = class_2561.method_43471("durahud.button.import").getString();
+        String title = Text.translatable("durahud.button.import").getString();
         Thread worker = new Thread(() -> {
             Path chosen = PresetDialogs.chooseOpen(directory, defaultName, title);
             if (chosen == null) {
-                runOnClient(() -> this.status = class_2561.method_43471("durahud.preset.cancelled"));
+                runOnClient(() -> this.status = Text.translatable("durahud.preset.cancelled"));
                 return;
             }
             DuraHudConfig imported = ConfigFile.importFrom(chosen);
@@ -418,20 +422,20 @@ public class DuraHudConfigScreen extends class_437 {
 
     /** 工作线程收尾统一回渲染线程：界面状态只在渲染线程上改。 */
     private static void runOnClient(Runnable action) {
-        class_310.method_1551().execute(action);
+        MinecraftClient.getInstance().execute(action);
     }
 
     /** 把导入的配置整份覆盖上去并重开界面；失败只显示提示（不破坏现有配置）。 */
     private void applyImported(DuraHudConfig imported, String name) {
         if (imported == null) {
-            this.status = class_2561.method_43469("durahud.preset.failed", name);
+            this.status = Text.translatable("durahud.preset.failed", name);
             return;
         }
         cfg.copyFrom(imported);
         cfg.save();
-        this.status = class_2561.method_43469("durahud.preset.imported", name);
-        if (class_310.method_1551().field_1755 == this) {
-            this.method_41843();
+        this.status = Text.translatable("durahud.preset.imported", name);
+        if (MinecraftClient.getInstance().currentScreen == this) {
+            this.clearAndInit();
         }
     }
 
@@ -440,35 +444,35 @@ public class DuraHudConfigScreen extends class_437 {
     // ------------------------------------------------------------------
 
     @Override
-    public void method_25394(class_332 ctx, int mouseX, int mouseY, float delta) {
+    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         // 原版每个界面都在自己的 render 开头调这句：Screen.render 只把 drawables 画一遍，
         // 不画背景（javap 实测，见 README 9.14）。少了它，从 Mod Menu / 标题界面进来时
         // 背后是透的，文字压在游戏画面上根本看不清。
-        this.method_25420(ctx);
-        super.method_25394(ctx, mouseX, mouseY, delta);
+        this.renderBackground(ctx);
+        super.render(ctx, mouseX, mouseY, delta);
         if (layout == null) {
             return;
         }
         int active = tab.ordinal();
         // 竖排标签用左侧的一条高亮竖线标出当前页（标签文字本身再加粗，见 addTabs）。
-        ctx.method_25294(layout.tabX() - 2, layout.tabY(active), layout.tabX(),
+        ctx.fill(layout.tabX() - 2, layout.tabY(active), layout.tabX(),
                 layout.tabY(active) + layout.tabH, 0xFF6FE3FF);
         if (this.status != null) {
-            ctx.method_27534(this.field_22793, this.status, this.field_22789 / 2,
+            ctx.drawCenteredTextWithShadow(this.textRenderer, this.status, this.width / 2,
                     layout.statusY, 0xFFF0F0F0);
         }
     }
 
     @Override
-    public void method_25419() {
+    public void close() {
         cfg.save();
-        if (this.field_22787 != null) {
-            this.field_22787.method_1507(this.parent);
+        if (this.client != null) {
+            this.client.setScreen(this.parent);
         }
     }
 
     @Override
-    public boolean method_25421() {
+    public boolean shouldPause() {
         return false;
     }
 
@@ -476,20 +480,20 @@ public class DuraHudConfigScreen extends class_437 {
     // 文本
     // ------------------------------------------------------------------
 
-    private static class_2561 onOff(String labelKey, boolean value) {
-        return class_2561.method_43471(labelKey).method_27693(": ")
-                .method_10852(class_2561.method_43471(value ? "options.on" : "options.off"));
+    private static Text onOff(String labelKey, boolean value) {
+        return Text.translatable(labelKey).append(": ")
+                .append(Text.translatable(value ? "options.on" : "options.off"));
     }
 
-    private static class_2561 enumLabel(String labelKey, String valuePrefix, Enum<?> value) {
-        return class_2561.method_43471(labelKey).method_27693(": ").method_10852(enumValue(valuePrefix, value));
+    private static Text enumLabel(String labelKey, String valuePrefix, Enum<?> value) {
+        return Text.translatable(labelKey).append(": ").append(enumValue(valuePrefix, value));
     }
 
     /** 优先用 <前缀>.<camelCase> 的翻译键；没有翻译时退回枚举原名，避免显示成空白。 */
-    private static class_2561 enumValue(String valuePrefix, Enum<?> value) {
+    private static Text enumValue(String valuePrefix, Enum<?> value) {
         String key = valuePrefix + "." + camel(value.name());
-        class_2561 translated = class_2561.method_43471(key);
-        return key.equals(translated.getString()) ? class_2561.method_43470(value.name()) : translated;
+        Text translated = Text.translatable(key);
+        return key.equals(translated.getString()) ? Text.literal(value.name()) : translated;
     }
 
     private static String camel(String upper) {

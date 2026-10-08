@@ -3,8 +3,8 @@ package dev.durahud.hud;
 import java.util.Collections;
 import java.util.List;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.class_1657;
-import net.minecraft.class_1799;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 
 /**
  * 可选模组提供的「额外装备槽」（目前只有 Trinkets）的入口。
@@ -29,7 +29,7 @@ final class ExtraSlots {
     }
 
     /** 当前装备在额外槽里的物品，顺序稳定；没有模组时永远是空列表。 */
-    static List<class_1799> collect(class_1657 player) {
+    static List<ItemStack> collect(PlayerEntity player) {
         if (!TRINKETS || player == null) {
             return Collections.emptyList();
         }

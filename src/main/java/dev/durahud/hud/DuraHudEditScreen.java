@@ -2,9 +2,9 @@ package dev.durahud.hud;
 
 import dev.durahud.DuraHudClient;
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.class_2561;
-import net.minecraft.class_332;
-import net.minecraft.class_437;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -20,7 +20,7 @@ import org.lwjgl.glfw.GLFW;
  *
  * <p>操作：左键拖动 / 滚轮缩放 / 方向键微调（Shift ×10）/ +- 缩放 / R 恢复默认。</p>
  */
-public class DuraHudEditScreen extends class_437 {
+public class DuraHudEditScreen extends Screen {
 
     private final DuraHudConfig cfg = DuraHudClient.config();
 
@@ -30,33 +30,33 @@ public class DuraHudEditScreen extends class_437 {
     private double grabDY;
 
     public DuraHudEditScreen() {
-        super(class_2561.method_43473());
+        super(Text.empty());
     }
 
     @Override
-    protected void method_25426() {
+    protected void init() {
         cfg.editMode = true;
     }
 
     @Override
-    public void method_25432() {
+    public void removed() {
         cfg.editMode = false;
         dragging = false;
         flush();
     }
 
     @Override
-    public boolean method_25421() {
+    public boolean shouldPause() {
         return false;
     }
 
     /** 全透明：只用 HUD 自身的青色边框提示，不画任何背景。 */
     @Override
-    public void method_25420(class_332 context) {
+    public void renderBackground(DrawContext context) {
     }
 
     @Override
-    public boolean method_25402(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
         HudLayout layout = HudLayout.last();
         if (button == 0 && layout != null && layout.containsScreen(mouseX, mouseY)) {
             dragging = true;
@@ -64,36 +64,36 @@ public class DuraHudEditScreen extends class_437 {
             grabDY = mouseY - layout.originY();
             return true;
         }
-        return super.method_25402(mouseX, mouseY, button);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean method_25403(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (dragging) {
             moveTo(mouseX - grabDX, mouseY - grabDY);
             return true;
         }
-        return super.method_25403(mouseX, mouseY, button, deltaX, deltaY);
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
-    public boolean method_25406(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (dragging) {
             dragging = false;
             flush();
             return true;
         }
-        return super.method_25406(mouseX, mouseY, button);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean method_25401(double mouseX, double mouseY, double amount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         scale((float) amount * 0.05F);
         return true;
     }
 
     @Override
-    public boolean method_25404(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         int step = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
         switch (keyCode) {
             case GLFW.GLFW_KEY_LEFT -> nudge(-step, 0);
@@ -109,9 +109,9 @@ public class DuraHudEditScreen extends class_437 {
                 cfg.scale = 1.0F;
                 dirty = true;
             }
-            case GLFW.GLFW_KEY_H -> method_25419();
+            case GLFW.GLFW_KEY_H -> close();
             default -> {
-                return super.method_25404(keyCode, scanCode, modifiers);
+                return super.keyPressed(keyCode, scanCode, modifiers);
             }
         }
         return true;
@@ -149,7 +149,7 @@ public class DuraHudEditScreen extends class_437 {
 
     /**
      * 滚轮/按键缩放只改内存并标脏：1.40.0 之前每一格滚轮都写一次配置文件，
-     * 在滚轮上滚一圈就是十几次磁盘写入。退出编辑界面时 {@link #method_25432()} 统一落盘。
+     * 在滚轮上滚一圈就是十几次磁盘写入。退出编辑界面时 {@link #removed()} 统一落盘。
      */
     private void scale(float delta) {
         cfg.scale = Math.max(0.25F, Math.min(4.0F, cfg.scale + delta));

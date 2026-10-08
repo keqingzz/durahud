@@ -1,9 +1,9 @@
 package dev.durahud.hud;
 
 import dev.durahud.config.DuraHudConfig;
-import net.minecraft.class_310;
-import net.minecraft.class_327;
-import net.minecraft.class_332;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
 
 /**
  * HUD 的渲染入口：每帧刷新物品、算一次几何、再把每个格子画出来。
@@ -43,8 +43,8 @@ public final class HudRenderer {
     private HudRenderer() {
     }
 
-    public static void render(class_332 ctx, DuraHudConfig cfg) {
-        class_310 mc = class_310.method_1551();
+    public static void render(DrawContext ctx, DuraHudConfig cfg) {
+        MinecraftClient mc = MinecraftClient.getInstance();
         if (!shouldDraw(mc, cfg)) {
             return;
         }
@@ -55,8 +55,8 @@ public final class HudRenderer {
             return;
         }
         HudLayout layout = HudLayout.geometry(cfg, ENTRIES.count(),
-                mc.method_22683().method_4486(), mc.method_22683().method_4502(),
-                Atlas.reserveTextWidth(mc.field_1772));
+                mc.getWindow().getScaledWidth(), mc.getWindow().getScaledHeight(),
+                Atlas.reserveTextWidth(mc.textRenderer));
         drawCells(ctx, mc, cfg, layout, dtSeconds);
         ENTRIES.commitPlacement();
         if (cfg.editMode) {
@@ -69,18 +69,18 @@ public final class HudRenderer {
      * 仍然往下走一遍几何，否则编辑界面上根本没有外框，HudLayout.last() 还会停留在上一次的陈旧
      * 几何（换过窗口尺寸后拖动就对不齐）。{@code ENTRIES.refresh} 对 null 玩家是安全的。
      */
-    private static boolean shouldDraw(class_310 mc, DuraHudConfig cfg) {
+    private static boolean shouldDraw(MinecraftClient mc, DuraHudConfig cfg) {
         if (cfg.editMode) {
             return true;
         }
-        return cfg.enabled && mc.field_1724 != null && !mc.field_1690.field_1842;
+        return cfg.enabled && mc.player != null && !mc.options.hudHidden;
     }
 
     /**
      * 逐格矩阵：每格在自己的 {@code push/translate/scale/pop} 里画，位置由条目给出（含平滑移动的
      * 中间量）。自动补位时原点与格子序号会一起变，只有逐格算位置才能让每格从旧位置滑到新位置。
      */
-    private static void drawCells(class_332 ctx, class_310 mc, DuraHudConfig cfg,
+    private static void drawCells(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg,
                                   HudLayout layout, float dtSeconds) {
         float scale = layout.scale();
         float originX = layout.originX();
@@ -90,22 +90,22 @@ public final class HudRenderer {
             DurabilityEntry entry = ENTRIES.get(i);
             entry.slideTo(originX + layout.cellLocalX(i) * scale,
                     originY + layout.cellLocalY(i) * scale, dtSeconds, cfg);
-            ctx.method_51448().method_22903();
-            ctx.method_51448().method_46416(entry.drawX(), entry.drawY(), 0.0F);
-            ctx.method_51448().method_22905(scale, scale, 1.0F);
+            ctx.getMatrices().push();
+            ctx.getMatrices().translate(entry.drawX(), entry.drawY(), 0.0F);
+            ctx.getMatrices().scale(scale, scale, 1.0F);
             drawEntry(ctx, mc, cfg, layout, entry);
-            ctx.method_51448().method_22909();
+            ctx.getMatrices().pop();
         }
     }
 
     /** 外框围的是整块 HUD：整排一起滑完之后按当前几何画。 */
-    private static void drawEditOverlay(class_332 ctx, HudLayout layout) {
+    private static void drawEditOverlay(DrawContext ctx, HudLayout layout) {
         float scale = layout.scale();
-        ctx.method_51448().method_22903();
-        ctx.method_51448().method_46416((float) layout.originX(), (float) layout.originY(), 0.0F);
-        ctx.method_51448().method_22905(scale, scale, 1.0F);
+        ctx.getMatrices().push();
+        ctx.getMatrices().translate((float) layout.originX(), (float) layout.originY(), 0.0F);
+        ctx.getMatrices().scale(scale, scale, 1.0F);
         drawEditBorder(ctx, layout.localW(), layout.localH());
-        ctx.method_51448().method_22909();
+        ctx.getMatrices().pop();
     }
 
     /**
@@ -128,7 +128,7 @@ public final class HudRenderer {
      * 画一格：边框、图标、耐久条、数值。坐标以格子左上角为原点 —— 格子自己的
      * {@code push/translate/scale} 已经在 {@link #render} 里摆好，这里不用再管屏幕位置。
      */
-    private static void drawEntry(class_332 ctx, class_310 mc, DuraHudConfig cfg,
+    private static void drawEntry(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg,
                                   HudLayout layout, DurabilityEntry entry) {
         boolean visible = entry.visible(cfg);
         float alpha = FadeState.alpha(entry.fade(), cfg.animateCells);
@@ -157,7 +157,7 @@ public final class HudRenderer {
      * 换物过渡中的一格：两份内容各推一格、交叉淡入淡出（见 {@link SwapState}）。位移用几何层的
      * 步距（缩放前的像素），所以缩放多少就走多少。
      */
-    private static void drawSwapping(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
+    private static void drawSwapping(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg, HudLayout layout,
                                      DurabilityEntry entry, SwapState swap, float alpha) {
         boolean horizontal = cfg.orientation == DuraHudConfig.Orientation.HORIZONTAL;
         int pitch = horizontal ? layout.pitchX() : layout.pitchY();
@@ -183,7 +183,7 @@ public final class HudRenderer {
      * <p>本格的不透明度必须包在内容外面：只给边框设 alpha、内容直接画，就是 2.0.3 的回归
      * —— 空手 ↔ 工具来回切时图标、耐久条、数字都是硬跳出来的，只有边框在淡。</p>
      */
-    private static void drawStill(class_332 ctx, class_310 mc, DuraHudConfig cfg, HudLayout layout,
+    private static void drawStill(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg, HudLayout layout,
                                   CellContent content, float alpha) {
         Severity severity = Severity.of(cfg, content.ratio());
         pushAlpha(ctx, alpha);
@@ -199,7 +199,7 @@ public final class HudRenderer {
      * @param alpha 这一格的淡入淡出系数（两份内容共用的外层系数）
      * @param severity 这一份内容的耐久档位，由调用者按它自己的 {@code ratio()} 算好传来
      */
-    private static void drawShiftedIcon(class_332 ctx, DuraHudConfig cfg, CellContent content,
+    private static void drawShiftedIcon(DrawContext ctx, DuraHudConfig cfg, CellContent content,
                                         float swapAlpha, float shift, boolean horizontal, int pitch,
                                         float alpha, Severity severity) {
         float a = alpha * swapAlpha;
@@ -223,10 +223,10 @@ public final class HudRenderer {
      * @param dy 换物滑入的纵向位移
      * @param severity 这一份内容的耐久档位（调用者算一次，图标层与仪表层共用）
      */
-    private static void drawIconLayer(class_332 ctx, DuraHudConfig cfg, CellContent content, int dx, int dy,
+    private static void drawIconLayer(DrawContext ctx, DuraHudConfig cfg, CellContent content, int dx, int dy,
                                       Severity severity) {
         if (cfg.showItemIcons) {
-            ctx.method_51427(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
+            ctx.drawItem(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
         }
         if (content.hasBar() && cfg.highlightCritical && severity == Severity.CRIT) {
             Atlas.selectionBox(ctx, (Metrics.CELL_W - Metrics.SELECT_W) / 2 + dx,
@@ -244,7 +244,7 @@ public final class HudRenderer {
      *
      * @param severity 这一份内容的耐久档位（同一帧里图标层已经算过，这里不再重判阈值）
      */
-    private static void drawGaugeLayer(class_332 ctx, class_310 mc, DuraHudConfig cfg,
+    private static void drawGaugeLayer(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg,
                                        HudLayout layout, CellContent content, Severity severity) {
         if (content.hasBar()) {
             drawBar(ctx, layout.barOffsetX(), layout.barOffsetY(), layout.barLength(),
@@ -255,19 +255,21 @@ public final class HudRenderer {
         }
         // 标签与字宽都由 CellContent 缓存：数字没变的帧既不拼字符串、也不量字形宽度。
         // VALUE 模式是两行（剩余 / 上限），两行在同一次 label(...) 里一起刷好，行距一行高。
-        String label = content.label(cfg, mc.field_1772);
+        String label = content.label(cfg, mc.textRenderer);
         String second = content.secondLabel();
-        // 槽位高度固定为两行：只有一行时让它落在槽位正中（VALUE 是两行，第一行顶格）——
-        // 切显示模式时格子不动，数字自己在槽位里换位置。
-        int firstLineY = layout.textOffsetY() + (second.isEmpty() ? layout.singleLineOffset() : 0);
+        // 槽位高度固定为两行：只有一行时贴着它那一侧（VALUE 是两行，第一行顶格）——
+        // 切显示模式时格子不动，数字自己在槽位里换位置。valueOffsetY 是可调的纵向微调，
+        // 两行一起挪，仍旧不改槽位与格子。
+        int dy = layout.valueOffsetY();
+        int firstLineY = layout.textOffsetY() + (second.isEmpty() ? layout.singleLineOffset() : 0) + dy;
         if (!label.isEmpty()) {
-            drawOutlinedText(ctx, mc.field_1772, label,
+            drawOutlinedText(ctx, mc.textRenderer, label,
                     layout.textOffsetX(content.labelWidth()), firstLineY, severity.textColor);
         }
         if (!second.isEmpty()) {
-            drawOutlinedText(ctx, mc.field_1772, second,
+            drawOutlinedText(ctx, mc.textRenderer, second,
                     layout.textOffsetX(content.secondLabelWidth()),
-                    layout.textOffsetY() + Metrics.TEXT_H, severity.textColor);
+                    layout.textOffsetY() + Metrics.TEXT_H + dy, severity.textColor);
         }
     }
 
@@ -278,21 +280,21 @@ public final class HudRenderer {
      * <p>设色之前先 {@code ctx.draw()}：已经排队的物品/文字必须用<b>上一个</b>颜色刷出去，
      * 否则它们会被染成这一格的颜色。</p>
      */
-    private static void pushAlpha(class_332 ctx, float alpha) {
+    private static void pushAlpha(DrawContext ctx, float alpha) {
         if (alpha >= 1.0F) {
             return;
         }
-        ctx.method_51452();
-        ctx.method_51422(1.0F, 1.0F, 1.0F, alpha);
+        ctx.draw();
+        ctx.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
     }
 
     /** 复位不透明度。复位之前再刷一次：本格排队的物品/文字要在颜色还生效时落到屏幕上。 */
-    private static void popAlpha(class_332 ctx, float alpha) {
+    private static void popAlpha(DrawContext ctx, float alpha) {
         if (alpha >= 1.0F) {
             return;
         }
-        ctx.method_51452();
-        ctx.method_51422(1.0F, 1.0F, 1.0F, 1.0F);
+        ctx.draw();
+        ctx.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /**
@@ -301,20 +303,20 @@ public final class HudRenderer {
      * {@code shadow = false}（javap 实测，见 README 9.13）。这样数字自带一圈 1px 硬描边，
      * 压在耐久条或物品图标上也看得清，不会有投影那种糊边。
      *
-     * <p>文字仍然交给 {@link class_327} 去画，本类不自己拼字形，所以字体资源包
+     * <p>文字仍然交给 {@link TextRenderer} 去画，本类不自己拼字形，所以字体资源包
      * （{@code assets/&lt;namespace&gt;/font/*.json} 与字体贴图）照常覆盖它，和原版等级数字一样。</p>
      */
-    private static void drawOutlinedText(class_332 ctx, class_327 font, String text,
+    private static void drawOutlinedText(DrawContext ctx, TextRenderer font, String text,
                                          int x, int y, int color) {
-        ctx.method_51433(font, text, x + 1, y, 0, false);
-        ctx.method_51433(font, text, x - 1, y, 0, false);
-        ctx.method_51433(font, text, x, y + 1, 0, false);
-        ctx.method_51433(font, text, x, y - 1, 0, false);
-        ctx.method_51433(font, text, x, y, color, false);
+        ctx.drawText(font, text, x + 1, y, 0, false);
+        ctx.drawText(font, text, x - 1, y, 0, false);
+        ctx.drawText(font, text, x, y + 1, 0, false);
+        ctx.drawText(font, text, x, y - 1, 0, false);
+        ctx.drawText(font, text, x, y, color, false);
     }
 
     /** 先画底条再画进度条：原版 BOSS 血条就是「凹槽 + 进度」两层。 */
-    private static void drawBar(class_332 ctx, int x, int y, int w, float ratio, Severity severity) {
+    private static void drawBar(DrawContext ctx, int x, int y, int w, float ratio, Severity severity) {
         int h = Metrics.BAR_H;
         int filled = Math.max(0, Math.min(w, Math.round(w * ratio)));
         Atlas.bossBar(ctx, x, y, w, h, severity.barColorIndex, false);
@@ -322,11 +324,11 @@ public final class HudRenderer {
     }
 
     /** 编辑模式下的虚线外框；fill() 会关掉混合，所以最后把混合恢复回去。 */
-    private static void drawEditBorder(class_332 ctx, int width, int height) {
-        ctx.method_25294(-1, -1, width + 1, 0, EDIT_BORDER);
-        ctx.method_25294(-1, height, width + 1, height + 1, EDIT_BORDER);
-        ctx.method_25294(-1, 0, 0, height, EDIT_BORDER);
-        ctx.method_25294(width, 0, width + 1, height, EDIT_BORDER);
+    private static void drawEditBorder(DrawContext ctx, int width, int height) {
+        ctx.fill(-1, -1, width + 1, 0, EDIT_BORDER);
+        ctx.fill(-1, height, width + 1, height + 1, EDIT_BORDER);
+        ctx.fill(-1, 0, 0, height, EDIT_BORDER);
+        ctx.fill(width, 0, width + 1, height, EDIT_BORDER);
         Atlas.beginTranslucent();
     }
 }

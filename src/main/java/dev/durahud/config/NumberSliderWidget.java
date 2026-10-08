@@ -1,14 +1,15 @@
 package dev.durahud.config;
 
+import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.text.Text;
+
 import java.util.function.DoubleConsumer;
-import net.minecraft.class_2561;
-import net.minecraft.class_357;
 
 /**
  * 数值滑条：滑条位置是 0..1，显示值线性映射到 [min, max]；整数模式四舍五入，
  * 否则保留两位小数。autoAtZero 时值 <= 0 显示成"自动"（耐久条长度用）。
  */
-final class NumberSliderWidget extends class_357 {
+final class NumberSliderWidget extends SliderWidget {
 
     private final String labelKey;
     private final double min;
@@ -21,7 +22,7 @@ final class NumberSliderWidget extends class_357 {
     NumberSliderWidget(int x, int y, int width, int height, String labelKey, double min, double max,
                        double value, boolean integer, boolean autoAtZero,
                        DoubleConsumer setter, Runnable onCommit) {
-        super(x, y, width, height, class_2561.method_43473(), fraction(min, max, value));
+        super(x, y, width, height, Text.empty(), fraction(min, max, value));
         this.labelKey = labelKey;
         this.min = min;
         this.max = max;
@@ -29,7 +30,7 @@ final class NumberSliderWidget extends class_357 {
         this.autoAtZero = autoAtZero;
         this.setter = setter;
         this.onCommit = onCommit;
-        method_25346();
+        updateMessage();
     }
 
     /** 值 -> 0..1 的滑条位置；NaN、Infinity、越界值全部夹到端点。 */
@@ -45,30 +46,30 @@ final class NumberSliderWidget extends class_357 {
      * 位置与显示一起更新，避免「配置里是 9、滑条上还写着 50」。
      */
     void showValue(double value) {
-        this.field_22753 = fraction(this.min, this.max, value);
-        method_25346();
+        this.value = fraction(this.min, this.max, value);
+        updateMessage();
     }
 
     private double actual() {
-        double raw = min + (max - min) * this.field_22753;
+        double raw = min + (max - min) * this.value;
         return integer ? Math.round(raw) : Math.round(raw * 100.0D) / 100.0D;
     }
 
     @Override
-    protected void method_25346() {
+    protected void updateMessage() {
         if (this.labelKey == null) {
             return;
         }
         double current = actual();
         if (autoAtZero && current <= 0.0D) {
-            method_25355(class_2561.method_43471(this.labelKey).method_27693(": ").method_10852(class_2561.method_43471("durahud.value.auto")));
+            setMessage(Text.translatable(this.labelKey).append(": ").append(Text.translatable("durahud.value.auto")));
             return;
         }
-        method_25355(class_2561.method_43471(this.labelKey).method_27693(": " + (integer ? String.valueOf((long) current) : String.valueOf(current))));
+        setMessage(Text.translatable(this.labelKey).append(": " + (integer ? String.valueOf((long) current) : String.valueOf(current))));
     }
 
     @Override
-    protected void method_25344() {
+    protected void applyValue() {
         if (this.setter != null) {
             this.setter.accept(actual());
         }

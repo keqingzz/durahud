@@ -38,6 +38,12 @@ public class DuraHudConfig {
      */
     public static final Anchor DEFAULT_ANCHOR = Anchor.HOTBAR_RIGHT;
 
+    /**
+     * 数值纵向微调的上下限（缩放前的像素）：一整行文字高。再多就会盖到旁边的元素上，
+     * 也会让「槽位高度恒定」这条纪律失去意义（见 README 7.4 节）。
+     */
+    public static final int VALUE_OFFSET_LIMIT = 9;
+
     public boolean enabled = true;
     public Anchor anchor = DEFAULT_ANCHOR;
     public Orientation orientation = Orientation.HORIZONTAL;
@@ -77,6 +83,11 @@ public class DuraHudConfig {
     public boolean showEmptySlots = true;
     /** 耐久数值显示什么：不显示 / 百分比 / 剩余-上限。默认显示「上剩余、下上限」两行。 */
     public ValueDisplay valueDisplay = ValueDisplay.VALUE;
+    /**
+     * 数值相对槽位的纵向微调（缩放前的像素，正数向下）：单行数值（百分比）默认已经贴着
+     * 耐久条，这里只是允许再挪一点点。它<b>只挪数字</b> —— 槽位、格子与整块 HUD 的尺寸都不变。
+     */
+    public int valueOffsetY = 0;
     public boolean showSlotFrames = true;
     public boolean showItemIcons = true;
     /** 格子出现/消失时淡入淡出；关掉就是旧的「直接出现、直接消失」。 */
@@ -117,6 +128,7 @@ public class DuraHudConfig {
         }
         scale = Math.max(0.25F, Math.min(4.0F, scale));
         barLength = Math.max(0, Math.min(182, barLength));
+        valueOffsetY = Math.max(-VALUE_OFFSET_LIMIT, Math.min(VALUE_OFFSET_LIMIT, valueOffsetY));
         // 偏移量刻意<b>不</b>夹：编辑模式把 HUD 拖到哪，offsetX/offsetY 就是那块屏幕上的绝对
         // 坐标（1920 宽的窗口里能到 1600+），而界面滑条只有 ±200。早期版本在这里夹一次，于是
         // 「打开设置界面 HUD 就跳回初始位置」；越界值交给 HudLayout 在绘制时拉回屏幕内即可，
@@ -149,6 +161,7 @@ public class DuraHudConfig {
         this.hideFull = other.hideFull;
         this.showEmptySlots = other.showEmptySlots;
         this.valueDisplay = other.valueDisplay;
+        this.valueOffsetY = other.valueOffsetY;
         this.showSlotFrames = other.showSlotFrames;
         this.showItemIcons = other.showItemIcons;
         this.animateCells = other.animateCells;
