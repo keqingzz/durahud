@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "durahud",
+  "version": "${version}",
+  "name": "DuraHUD",
+  "description": "在 HUD 上显示主手、副手与盔甲的耐久。完全复用原版 GUI 图集（widgets.png / bars.png），因此会自动被 Cozy UI 等资源包覆盖。",
+  "authors": ["durahud"],
+  "license": "MIT",
+  "icon": "assets/durahud/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.durahud.DuraHudClient"],
+    "modmenu": ["dev.durahud.config.ModMenuIntegration"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "fabric-api": "*",
+    "minecraft": "~1.20.1",
+    "java": ">=17"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}

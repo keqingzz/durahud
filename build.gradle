@@ -1,0 +1,62 @@
+plugins {
+    id 'fabric-loom' version '1.6.12'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base { archivesName = project.archives_base_name }
+
+repositories {
+    maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/releases/' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // ModMenu 仅编译期需要；运行期缺失也不影响本模组
+    modCompileOnly "com.terraformersmc:modmenu:7.2.2"
+    // Trinkets 同样只用于编译；运行期缺失时由 ExtraSlots 的 isModLoaded 守卫拦下。
+    // 官方 maven（repo.sleeping.town）在本机连不上（连接超时），所以直接引用整合包里已装的
+    // mod jar —— loom 会把它从 intermediary 重映射到 named，编译期可见的 API 与正式依赖一致。
+    // trinkets_jar 是相对本工程目录的路径，原因见 gradle.properties 里的注释。
+    modCompileOnly files(project.trinkets_jar)
+    // TrinketComponent 继承自 cardinal-components 的 ComponentV3，javac 解析成员需要父类在
+    // 类路径上，而这两个库是 trinkets 的 jar-in-jar（见 tools/extract-cca.mjs）。
+    modCompileOnly files(project.cca_base_jar, project.cca_entity_jar)
+
+    // A1：几何层不依赖 Minecraft，因此可以脱离游戏跑单元测试
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "failed", "skipped"
+        exceptionFormat "full"
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") { expand "version": project.version }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 17
+    it.options.encoding = 'UTF-8'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+jar {
+    from("LICENSE") { rename { "${it}_${project.archives_base_name}" } }
+}
