@@ -9,6 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 设置界面布局的离线验证。两条核心诉求：<b>GUI 缩放拉到多大，控件都得留在屏幕里</b>
  * （旧版固定 17 行、行高被压到 12 像素，底部按钮就被挤出了屏幕，只有界面尺寸 4 及以下正常）；
  * <b>左侧竖排标签既不能压到选项块，也不能越出窗口</b>。
+ *
+ * <p>守住的不变量：控件的行数与位置全部由这里的纯数学算出来，界面里不许再有硬编码的「第 N 行」
+ * （§13.12）。失败意味着 2.0.0 之前那个老毛病重演 —— 只有界面尺寸 4 及以下才正常，缩放一大就得
+ * 靠拖窗口才能摸到底部按钮，而且标签列会把选项块压掉。</p>
  */
 class ScreenLayoutTest {
 
@@ -22,6 +26,7 @@ class ScreenLayoutTest {
         {854, 480}, {1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160},
     };
 
+    // 防回归（§13.12 的老 bug）：行高被压扁、底部按钮被挤出屏幕 —— 10 组尺寸逐项守住「都在屏内」。
     @Test
     void everyRealisticSizeKeepsControlsInsideTheScreen() {
         for (int[] size : SIZES) {
@@ -46,6 +51,7 @@ class ScreenLayoutTest {
         }
     }
 
+    // 防回归：极小窗口要逐级退让（行高与标签高有下限、按钮与标签仍够得着），不许压成 0 或溢出。
     @Test
     void extremeSmallWindowKeepsButtonsAndTabsReachable() {
         for (int[] size : new int[][] {{213, 120}, {240, 140}, {160, 120}, {320, 150}}) {
@@ -63,6 +69,7 @@ class ScreenLayoutTest {
         }
     }
 
+    // 防回归：列数由窗口宽与标签列占宽共同决定，320x180（1080p + 缩放 6）必须退到单列。
     @Test
     void wideWindowUsesTwoColumnsAndNarrowOneUsesSingleColumn() {
         assertEquals(2, ScreenLayout.of(854, 480, ROWS, TABS).columns);
@@ -72,6 +79,7 @@ class ScreenLayoutTest {
         assertEquals(1, ScreenLayout.of(320, 180, ROWS, TABS).columns);
     }
 
+    // 防回归：矮窗口的标签变扁但有下限，标签列在内容带里垂直居中（上下留白相差不超过 1 像素）。
     @Test
     void tabsShrinkWithTheWindowAndStayCentered() {
         ScreenLayout tall = ScreenLayout.of(854, 480, ROWS, TABS);
@@ -86,6 +94,7 @@ class ScreenLayoutTest {
     }
 
     /** 二级菜单（选项行）与左侧六大标签齐平：两者在同一段高度里居中，中心相差不超过 1 像素。 */
+    // 防回归（用户反馈「二级菜单在顶上，挪到中间和六大选项齐平」）：两者中心相差不超过 1 像素。
     @Test
     void rowsSitLevelWithTheTabs() {
         for (int[] size : SIZES) {
@@ -99,6 +108,7 @@ class ScreenLayoutTest {
         }
     }
 
+    // 防回归：行数按列分配不许丢行、行号不许越出所在列（索引算错就会把控件画到列外）。
     @Test
     void rowsAreDistributedOverColumnsWithoutGaps() {
         for (int rows = 0; rows <= ROWS; rows++) {
@@ -119,6 +129,7 @@ class ScreenLayoutTest {
      * 窗口小到排不下完整布局时（100x60、40x30 这类），只要求「所有控件都还在窗口里」
      * 且几何不自相矛盾 —— 这时标签与选项行会被压到 1 像素高，谈不上好看，但绝不能溢出。
      */
+    // 防回归：100x60 / 40x30 这类排不下完整布局的窗口，只要求控件都在窗口内且几何不自相矛盾。
     @Test
     void tinyWindowsKeepEveryControlInsideTheWindow() {
         for (int[] size : new int[][] {{150, 110}, {140, 100}, {120, 80}, {100, 60}, {40, 30}}) {

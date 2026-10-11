@@ -53,6 +53,12 @@ public final class DurabilityEntry {
     private boolean onScreen;
     private boolean onScreenNow;
 
+    /**
+     * 造一个固定部位的格子。
+     *
+     * @param kind  6 个原版部位之一，决定排序位置与是否算盔甲格
+     * @param stack 初始物品；之后每帧都会被 {@link #setStack} 覆盖
+     */
     public DurabilityEntry(Kind kind, ItemStack stack) {
         this.kind = kind;
         this.armor = kind != null && kind.armor;
@@ -64,14 +70,17 @@ public final class DurabilityEntry {
         return new DurabilityEntry(null, stack);
     }
 
+    /** 固定部位身份；额外装备格（{@link #extra}）是 null。 */
     public Kind kind() {
         return kind;
     }
 
+    /** 当前物品栈；正常路径不会是 null，但判定里仍防了一手（见 {@link #isEmpty()}）。 */
     public ItemStack stack() {
         return stack;
     }
 
+    /** 每帧由 {@link HudEntries} 用玩家此刻的槽位内容覆盖；只换引用，不复制物品栈。 */
     public void setStack(ItemStack stack) {
         this.stack = stack;
     }
@@ -106,6 +115,7 @@ public final class DurabilityEntry {
         return drawX;
     }
 
+    /** 本帧要画的屏幕坐标，纵向；与 {@link #drawX()} 成对使用。 */
     public float drawY() {
         return drawY;
     }
@@ -158,16 +168,19 @@ public final class DurabilityEntry {
      * @param dtSeconds 距上一帧的秒数（由渲染器给出；停帧或长时间暂停后传 0，动画就停在原地）
      */
     public void advance(float dtSeconds, DuraHudConfig cfg) {
+        // ① 换物间隔：所有换物时长的自适应都以它为输入（见 SwapPacing），所以先累加再分派。
         boolean filled = hasContents(cfg);
         if (dtSeconds > 0.0F) {
             sinceSwapSeconds += dtSeconds;   // NaN 与负数都当「这一帧没动」
         }
 
+        // ② 关掉动画：一帧到位，没有过渡也没有加减速。
         if (!cfg.animateCells) {
             advanceInstant(filled, cfg, dtSeconds);
             return;
         }
 
+        // ③ 三条互斥分支：没内容 / 有内容且静止 / 有内容且正在换物。快照怎么刷新由各自分支决定。
         if (!filled) {
             advanceEmpty(dtSeconds);
         } else if (!swap.active()) {
@@ -176,6 +189,8 @@ public final class DurabilityEntry {
             advanceSwapping(cfg, dtSeconds);
         }
 
+        // ④ 淡入淡出永远按本帧开头算出的 filled 推进，与上面分支里的快照刷新互不干扰
+        // （顺序反过来就会用「刷新后的内容」决定可见性，淡出中的替身会被当场抹掉）。
         fade = FadeState.approach(fade, filled ? 1.0F : 0.0F, dtSeconds, cfg.animationMillis);
     }
 
@@ -258,6 +273,10 @@ public final class DurabilityEntry {
         return drawn.getItem() == stack.getItem();
     }
 
+    // ------------------------------------------------------------------
+    // 判定：这一格有没有内容、占不占位、画不画
+    // ------------------------------------------------------------------
+
     boolean isEmpty() {
         return stack == null || stack.isEmpty();
     }
@@ -306,6 +325,10 @@ public final class DurabilityEntry {
     }
 
     /** 有耐久度（可损坏）或物品自带小耐久条。包内可见：只有 {@link CellContent} 的快照要用。 */
+    // ------------------------------------------------------------------
+    // 读数：真实耐久。配色、濒危与满耐久判定都用这里的数；条长与数字是显示值，在 CellContent
+    // ------------------------------------------------------------------
+
     boolean hasWear() {
         if (isEmpty()) {
             return false;
@@ -313,10 +336,12 @@ public final class DurabilityEntry {
         return stack.getMaxDamage() > 0 || stack.isItemBarVisible();
     }
 
+    /** 耐久上限；不可损坏的物品是 0（此时只能退回物品自带小条，见 {@link #ratio()}）。 */
     int max() {
         return stack.getMaxDamage();
     }
 
+    /** 剩余耐久 = 上限 − 已损；夹在 0 以上（损坏值理论上不会超过上限）。 */
     int remaining() {
         return Math.max(0, max() - stack.getDamage());
     }

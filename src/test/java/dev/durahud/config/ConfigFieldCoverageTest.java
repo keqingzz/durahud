@@ -21,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>{@code ConfigMigrationTest} 里那条手写 26 字段清单的往返用例只能证明「写下来的都还在」，
  * 加一个字段它不会响；这里反过来：字段一多，自动就多测一条。</p>
+ *
+ * <p>失败意味着 §13.26 只做了一半：新增字段却漏了 {@code read} / {@code copyFrom} /
+ * {@code resetToDefaults} 里的某一份，表现是「改完设置下次启动又变回去」或「导入预设没生效」——
+ * 这类漏改不会编译报错，只有反射数一遍才看得见。</p>
  */
 class ConfigFieldCoverageTest {
 
@@ -73,6 +77,7 @@ class ConfigFieldCoverageTest {
         }
     }
 
+    // 防回归：加了字段忘了补 ConfigFile.read，值会悄悄退回默认（写得出、读不回）。
     @Test
     void everyFieldSurvivesWriteAndRead() throws Exception {
         DuraHudConfig written = new DuraHudConfig();
@@ -85,6 +90,7 @@ class ConfigFieldCoverageTest {
         assertSameValues(written, ConfigFile.read(json), "写盘再读回");
     }
 
+    // 防回归：加了字段忘了补 copyFrom，导入预设 / 恢复默认都会漏掉该字段。
     @Test
     void everyFieldIsCopiedByCopyFrom() throws Exception {
         DuraHudConfig source = new DuraHudConfig();
@@ -94,6 +100,7 @@ class ConfigFieldCoverageTest {
         assertSameValues(source, target, "copyFrom");
     }
 
+    // 防回归：加了字段忘了补 resetToDefaults，点「恢复默认」后它还留着用户改过的值。
     @Test
     void everyFieldIsRestoredByResetToDefaults() throws Exception {
         DuraHudConfig defaults = new DuraHudConfig();
@@ -103,6 +110,7 @@ class ConfigFieldCoverageTest {
         assertSameValues(defaults, cfg, "resetToDefaults");
     }
 
+    // 防回归：editMode 这类会话内状态一旦被写进文件，下次启动就直接进编辑模式。
     @Test
     void editModeIsTemporaryStateAndNeverWritten() throws Exception {
         assertEquals(false, new DuraHudConfig().editMode, "editMode 的默认值应当是 false");

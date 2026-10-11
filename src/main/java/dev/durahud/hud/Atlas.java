@@ -22,10 +22,16 @@ import net.minecraft.util.Identifier;
  *
  * <p><b>关于条形端帽</b>：BOSS 血条条带不是左右对称的 —— 实测绿色进度条
  * 左端过渡 2px、右端过渡 4px。所以三段切片必须用非对称端帽，否则右端看起来会比左端硬。</p>
+ *
+ * <p><b>每帧热路径</b>：这些方法每帧会被调用多次，方法体内不分配任何对象（唯一的缓存是
+ * {@link #reserveTextWidth} 里的字体与字宽）。改这里时不要引入装箱、字符串拼接或 lambda
+ * （见 README 10 节约束 2）。</p>
  */
 public final class Atlas {
 
+    /** 原版 GUI 图集：格子边框与选中框都从它取样，资源包替换它就等于换掉本 HUD 的外观。 */
     public static final Identifier WIDGETS = new Identifier("textures/gui/widgets.png");
+    /** 原版血条图集：耐久条从它取样。与 {@link #WIDGETS} 一样走原版路径，本模组不打包任何贴图。 */
     public static final Identifier BARS = new Identifier("textures/gui/bars.png");
 
     private Atlas() {
@@ -49,6 +55,7 @@ public final class Atlas {
         RenderSystem.defaultBlendFunc();
     }
 
+    /** 濒危高亮框（原版「选中格」）。比格子大一圈，所以要由调用者向左上各让 1px 画。 */
     public static void selectionBox(DrawContext ctx, int x, int y) {
         beginTranslucent();
         ctx.drawTexture(WIDGETS, x, y, Metrics.SELECT_U, Metrics.SELECT_V, Metrics.SELECT_W, Metrics.SELECT_H);

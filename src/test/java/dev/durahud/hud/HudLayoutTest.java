@@ -28,6 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>覆盖 Anchor(8) × Orientation(2) × BarSide(4) × ValuePlacement(5) × 格子数(1..6)，
  * 每种组合在 320x240 与 854x480 两个窗口下都检查一遍；另外单独检查缩放取整、
  * 阈值分档的边界，并把代表性布局导出成 build/preview/layout.json 供离线预览工具使用。</p>
+ *
+ * <p>守住的不变量：格子数与数值槽位都是常量、都不看显示模式（§10.3），整块位置只由锚点 / 方向 /
+ * 条与数值的位置算出来，再被钳进窗口 —— 缩放、手改的偏移、比 HUD 还小的窗口都不许让控件跑到
+ * 屏幕外（§13.29 记的那次「显示模式渗进几何」就发生在这一层）。失败意味着用户不是看到格子重叠、
+ * 耐久条压住图标，就是「HUD 拖出屏幕之后再也拖不回来」。</p>
  */
 class HudLayoutTest {
 
@@ -61,12 +66,17 @@ class HudLayoutTest {
         return cfg;
     }
 
+    // ------------------------------------------------------------------
+    // 屏幕钳制：缩放 / 偏移 / 极小窗口下，整块允许落在哪里
+    // ------------------------------------------------------------------
+
     /**
      * 旧版 check() 固定 {@code scale = 1}、从不设 offset、还整段跳过 CUSTOM，于是
      * 「窗口放得下、整块却被推出屏」这类问题一直藏着。这里把缩放（含 0 / 负数 / NaN）、
      * 偏移（含 100000 这种手改值）、小于 HUD 的窗口全部交叉跑一遍：
      * 装得下就必须完整落在窗口里，装不下也只允许从 (0,0) 开始溢出、绝不能是负坐标。
      */
+    // 防回归：缩放被夹进 [0.25, 4]；装得下必须完整可见，装不下只允许从 (0,0) 起画（不许出现负坐标）。
     @Test
     void scalesOffsetsAndTinyWindowsStayOnScreen() {
         List<String> failures = new ArrayList<>();
@@ -124,6 +134,7 @@ class HudLayoutTest {
                 + String.join("\n", failures.subList(0, Math.min(20, failures.size()))));
     }
 
+    // 防回归：8×2×4×5×6×2 全组合里，格子不重叠、条不压格子、文字不压条、AUTO 与条不同侧。
     @Test
     void everyCombinationKeepsItsInvariants() {
         List<String> failures = new ArrayList<>();
@@ -233,6 +244,11 @@ class HudLayoutTest {
         }
     }
 
+    // ------------------------------------------------------------------
+    // 尺寸与文字槽位：缩放换算，以及「这一格有没有文字」
+    // ------------------------------------------------------------------
+
+    // 防回归：screenW/H 必须是缩放后的取整值 —— 这份尺寸量错，上面所有钳制跟着一起错。
     @Test
     void screenSizeIsTheScaledLocalSize() {
         DuraHudConfig cfg = config(Anchor.TOP_LEFT, Orientation.HORIZONTAL, BarSide.BELOW, ValuePlacement.AUTO);
@@ -242,6 +258,7 @@ class HudLayoutTest {
         assertEquals(Math.round(layout.localH() * 1.3F), layout.screenH());
     }
 
+    // 防回归：textWidth 传 0 表示「没有文字」，此时不许有文字侧，几何必须照常成立。
     @Test
     void textIsOptional() {
         DuraHudConfig cfg = config(Anchor.TOP_LEFT, Orientation.HORIZONTAL, BarSide.BELOW, ValuePlacement.AUTO);
@@ -251,13 +268,18 @@ class HudLayoutTest {
         assertEquals(0, layout.textWidth());
     }
 
+    // ------------------------------------------------------------------
+    // 显示模式不许渗进几何（几何侧，见 §13.29）
+    // ------------------------------------------------------------------
+
     /**
      * 切换显示模式不许动几何：OFF / VALUE / PERCENT 在每一组「条位置 x 数值位置」下，整块尺寸、
      * 格子坐标、条与文字的偏移都必须逐项相同。
      *
-     * <p>这是用户报过的问题：模式一变格子就挪。根因是预留宽度按模式取样本、槽位高度按模式取
+     * <p>这是历史回归：模式一变格子就挪。根因是预留宽度按模式取样本、槽位高度按模式取
      * 一行或两行，两者都进了几何。现在预留量与模式无关，模式只决定槽位里画几个字、画在哪。</p>
      */
+    // 防回归（2.1.3）：模式只决定槽位里画几个字、画在哪，整块尺寸 / 格距 / 偏移必须逐项相同。
     @Test
     void valueDisplayNeverMovesTheGeometry() {
         List<String> failures = new ArrayList<>();
@@ -305,6 +327,11 @@ class HudLayoutTest {
                 cells.toString(), String.valueOf(layout.textSide()));
     }
 
+    // ------------------------------------------------------------------
+    // 条长与耐久档位：纯数值规则
+    // ------------------------------------------------------------------
+
+    // 防回归：没配置时条长按左右 / 上下分两种回退，且必须夹在 BAR_MIN..BAR_FULL_W 之间。
     @Test
     void barLengthFallsBackToCellWidthThenClamps() {
         DuraHudConfig cfg = new DuraHudConfig();
@@ -318,6 +345,7 @@ class HudLayoutTest {
         assertEquals(Metrics.BAR_MIN, HudLayout.resolveBarLength(cfg));
     }
 
+    // 防回归：阈值是「严格小于」—— 写成 <= 会让 20% / 50% 这两个整数百分比显示成低一档。
     @Test
     void severityThresholdsAreStrictlyBelow() {
         DuraHudConfig cfg = new DuraHudConfig();
@@ -330,6 +358,11 @@ class HudLayoutTest {
         assertEquals(Severity.GOOD, Severity.of(cfg, 1.0F));
     }
 
+    // ------------------------------------------------------------------
+    // 落点钳制：自定义锚点，以及「最多露出半格」
+    // ------------------------------------------------------------------
+
+    // 防回归：CUSTOM 的偏移要尽量原样生效，越界了也必须拉回屏幕（否则编辑框跟着出屏，救不回来）。
     @Test
     void customAnchorIsStillPulledBackOnScreen() {
         DuraHudConfig cfg = config(Anchor.CUSTOM, Orientation.HORIZONTAL, BarSide.BELOW, ValuePlacement.AUTO);
@@ -354,6 +387,7 @@ class HudLayoutTest {
                 "左上越界：" + negative.originX() + "," + negative.originY());
     }
 
+    // 防回归（2.0.1）：允许推出屏幕最多半格，但锚点自己不受余量影响（HOTBAR_LEFT 靠它留在屏内）。
     @Test
     void halfACellMayHangOffTheEdge() {
         DuraHudConfig cfg = config(Anchor.TOP_LEFT, Orientation.HORIZONTAL, BarSide.BELOW, ValuePlacement.AUTO);
@@ -395,12 +429,17 @@ class HudLayoutTest {
         return Math.max(0, Math.min(Math.round(cellSize * scale / 2.0F), size / 2));
     }
 
+    // ------------------------------------------------------------------
+    // 出厂默认值：新装用户第一眼看到的那套布局
+    // ------------------------------------------------------------------
+
     /**
      * 出厂默认值 = 推荐布局（2.1.4 起）：贴在热键栏右侧，耐久条与两行数值都在格子上方。
      *
      * <p>这条也是防回归：默认值被谁改回旧的那套（快捷栏上方 / 条在格子下方 / 不显示数值），
      * 新装用户的观感就变了，这里会立刻红。</p>
      */
+    // 防回归（2.1.4）：DEFAULT_ANCHOR / ABOVE / ABOVE / VALUE 四件套，谁改回旧默认这条就红（§13.30）。
     @Test
     void shippedDefaultsSitRightOfTheHotbarWithBarAndValuesOnTop() {
         DuraHudConfig cfg = new DuraHudConfig();
@@ -421,6 +460,7 @@ class HudLayoutTest {
 
     private static final float[] RATIOS = {1.0F, 0.62F, 0.15F, 0.40F, 0.80F};
 
+    // 防回归：预览 JSON 写完要读回来逐字节核对，防的是写空 / 写坏（文件存在是恒真的，断言它没意义）。
     @Test
     void exportPreviewGeometry() throws IOException {
         List<String> cases = new ArrayList<>();
@@ -497,10 +537,15 @@ class HudLayoutTest {
         return sb.toString();
     }
 
+    // ------------------------------------------------------------------
+    // 单行贴边、数值微调与槽位居中（2.1.2 → 2.1.5 这条线上的观感）
+    // ------------------------------------------------------------------
+
     /**
      * 槽位高度仍是两行（常量），但单行（百分比）贴着它那一侧：上下两侧时数字紧挨耐久条，
      * 中间只留 TEXT_GAP；左右两侧时纵向居中，位置与 2.1.2 的公式一模一样。
      */
+    // 防回归（2.1.5）：上下两侧时单行紧挨耐久条、只留 TEXT_GAP；左右两侧仍按 2.1.2 的公式居中。
     @Test
     void singleLineHugsTheSideItSitsOn() {
         for (BarSide side : new BarSide[]{BarSide.ABOVE, BarSide.BELOW}) {
@@ -527,6 +572,7 @@ class HudLayoutTest {
     }
 
     /** 数值纵向微调只挪数字：原点、整块尺寸、格距与槽位一个像素都不动，越界值夹到 ±9。 */
+    // 防回归（2.1.5）：微调不进几何，越界值夹到 VALUE_OFFSET_LIMIT；直接改字段的路径也得安全（§13.31）。
     @Test
     void valueOffsetNudgesOnlyTheNumbers() {
         HudLayout first = HudLayout.geometry(
@@ -561,6 +607,7 @@ class HudLayoutTest {
     }
 
     /** 左右两侧的数值在固定槽位里居中：位数或模式变了只挪槽位内部，格子不动。 */
+    // 防回归（2.1.3）：字宽 1..槽位宽逐个验居中含入，位数变化不许把格子挪走。
     @Test
     void textIsCentredInsideTheReservedSlotOnBothSides() {
         for (ValuePlacement value : new ValuePlacement[]{ValuePlacement.LEFT, ValuePlacement.RIGHT}) {
@@ -580,10 +627,15 @@ class HudLayoutTest {
         }
     }
 
+    // ------------------------------------------------------------------
+    // 源码级守卫：几何层与 Atlas 都不许知道显示模式（§13.29）
+    // ------------------------------------------------------------------
+
     /**
      * 源码级守卫：预留宽度与槽位高度都必须与显示模式无关。单靠几何测试拦不住「谁又把模式传进
      * 预留计算」这类回归，所以这里直接盯源码。
      */
+    // 防回归：Atlas.reserveTextWidth 不许再收 ValueDisplay，HudLayout 源码里不许出现 valueDisplay。
     @Test
     void textSlotReservationNeverReadsTheDisplayMode() throws IOException {
         String atlas = read("src/main/java/dev/durahud/hud/Atlas.java");

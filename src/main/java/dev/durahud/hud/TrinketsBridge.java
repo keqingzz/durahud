@@ -28,6 +28,12 @@ final class TrinketsBridge {
      */
     private static final List<ItemStack> BUFFER = new ArrayList<>();
 
+    /**
+     * 玩家当前装备的所有非空饰品，顺序由 Trinkets 的 {@code getAllEquipped()} 决定。
+     *
+     * <p>返回的是复用的 {@link #BUFFER}：调用方必须立刻消费，不要存进字段或跨帧使用 ——
+     * 下一次调用会先把它清空。这里刻意不用 {@code stream()} / 新列表，见 README 10 节约束 2。</p>
+     */
     static List<ItemStack> collect(PlayerEntity player) {
         BUFFER.clear();
         TrinketComponent component = TrinketsApi.getTrinketComponent(player).orElse(null);

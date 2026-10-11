@@ -7,6 +7,9 @@ import dev.durahud.config.DuraHudConfig.ValueDisplay;
  *
  * <p>单独成一个类是因为 {@link CellContent} 要按「指纹」缓存结果：数字不变的那些帧既不重新
  * 拼字符串、也不重新量字形宽度，而拼装规则本身需要能被测到。</p>
+ *
+ * <p>拼装规则<b>只在这里</b>：渲染层不许自己拼第二行，也不许把「剩余/上限」拼成一行 ——
+ * 那样预留宽度会按 9 个字符算，横向排列的格子间距立刻被撑宽（见 README 13.27）。</p>
  */
 final class CellLabel {
 

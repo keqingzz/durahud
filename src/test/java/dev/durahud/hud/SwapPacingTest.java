@@ -10,11 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * <p>要钉住的性质：间隔够宽时就是配置时长（配置项是上限）；间隔正好等于时长时压缩到「上一件
  * 还能停够 80 毫秒」；再快也有下限托住；间隔未知（NaN / 负数）不缩短；间隔的浮点误差不会让
  * 停留少一毫秒。</p>
+ *
+ * <p>失败意味着 §13.23 被反过来做：连续切换时靠「延迟下一次过渡」争取停留 —— 那会让操作出现
+ * 可见延迟，而且与「条与数值只画当前那一份」冲突。停留只能像这里一样，从过渡时长里腾出来。</p>
  */
 class SwapPacingTest {
 
     private static final int MILLIS = 200;
 
+    // 防回归：间隔够宽时不许缩短 —— 单次换物必须完整播放配置时长（配置项在这里是上限，不是定值）。
     @Test
     void wideGapKeepsTheConfiguredDuration() {
         // 很久没换过（或刚开局给了正无穷）：单次换物，完整播放配置时长。
@@ -22,12 +26,14 @@ class SwapPacingTest {
         assertEquals(MILLIS, SwapPacing.duration(MILLIS, Float.POSITIVE_INFINITY));
     }
 
+    // 防回归（2.0.7 用户反馈）：间隔正好等于时长时停留不能变成 0，必须滑 120ms + 停 80ms。
     @Test
     void gapEqualToTheDurationStillLeavesTheDwell() {
         // 间隔正好 200ms：本次只滑 120ms，上一件在格心停 80ms。
         assertEquals(120, SwapPacing.duration(MILLIS, 0.2F));
     }
 
+    // 防回归：压缩过头反而比配置时长还慢 —— 本次时长只能被压短，绝不能被抬高。
     @Test
     void theConfiguredDurationIsAnUpperBound() {
         // 间隔 250ms：还想停 80ms 就只能滑 170ms；间隔 300ms 就顶到上限 200ms。
@@ -35,6 +41,7 @@ class SwapPacingTest {
         assertEquals(MILLIS, SwapPacing.duration(MILLIS, 0.3F));
     }
 
+    // 防回归：极短间隔下预算会算成负数，必须有下限托住（这时停留短一点是可以接受的）。
     @Test
     void veryShortGapsAreHeldUpByTheFloor() {
         // 间隔 100ms：预算只剩 20ms，被下限托到 60ms（这时停留 40ms，而不是负的）。
@@ -42,6 +49,7 @@ class SwapPacingTest {
         assertEquals(SwapPacing.FLOOR_MILLIS, SwapPacing.duration(MILLIS, 0.0F));
     }
 
+    // 防回归：配置时长本身比下限还短时，下限不许把它顶上去（区间收缩成一个点，一切照配置）。
     @Test
     void theFloorNeverExceedsTheConfiguredDuration() {
         // 配置本身就比下限短时，一切照配置来（区间收缩成一个点）。
@@ -49,12 +57,14 @@ class SwapPacingTest {
         assertEquals(40, SwapPacing.duration(40, 0.2F));
     }
 
+    // 防回归：间隔未知（NaN / 负数，例如刚开局）按「很久没换过」处理，绝不拿 NaN 去算时长。
     @Test
     void unknownGapsNeverShorten() {
         assertEquals(MILLIS, SwapPacing.duration(MILLIS, Float.NaN));
         assertEquals(MILLIS, SwapPacing.duration(MILLIS, -1.0F));
     }
 
+    // 防回归：毫秒取整只能朝着「停留更久」那边错，吃进停留就会越切越急。
     @Test
     void roundingNeverEatsIntoTheDwell() {
         // 间隔 180.1ms、停留 80ms → 余量 100.1ms：按毫秒四舍五入成 180 → 滑 100ms，停留正好 80。

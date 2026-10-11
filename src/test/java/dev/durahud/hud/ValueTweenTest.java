@@ -10,11 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>要钉住的性质：第一帧直接落位、中间<b>有加速度</b>（起步与收尾都比匀速慢）、走完精确
  * 吸附、中途改目标从当前位置重新起步、时间只由时长与帧间隔决定（与帧率无关）。</p>
+ *
+ * <p>失败意味着耐久条长度与数值退回「僵硬加减」：要么第一次出现时从 0 长出来，要么中途换目标时
+ * 先掉回起点再折返（2.0.4 用户反馈要的就是这里的加速度，见 7.9）。</p>
  */
 class ValueTweenTest {
 
     private static final int MILLIS = 200;
 
+    // 防回归：第一次拿到目标就直接落位，不许看到条从 0 长出来（新物品进场时会像一段假动画）。
     @Test
     void firstUpdateLandsOnTheTargetWithoutGrowingFromZero() {
         ValueTween tween = new ValueTween();
@@ -22,6 +26,7 @@ class ValueTweenTest {
         assertEquals(0.8F, tween.update(0.8F, 0.016F, MILLIS), 1.0E-4F);
     }
 
+    // 防回归：必须是「起步慢、中段快、到点精确」的缓动，退化成匀速就回到用户抱怨的僵硬加减。
     @Test
     void startsSlowHasAnAcceleratingMiddleAndSettlesExactly() {
         ValueTween tween = new ValueTween();
@@ -39,6 +44,7 @@ class ValueTweenTest {
         assertEquals(0.0F, tween.update(0.0F, 0.1F, MILLIS), 1.0E-4F);
     }
 
+    // 防回归：中途改目标从当前位置重新起步，不许先掉回起点再折返（掉耐久时条会先缩回去）。
     @Test
     void retargetingMidFlightRestartsFromTheCurrentValue() {
         ValueTween tween = new ValueTween();
@@ -53,6 +59,7 @@ class ValueTweenTest {
         assertEquals(0.6F, tween.update(0.6F, 1.0F, MILLIS), 1.0E-4F);
     }
 
+    // 防回归：帧间隔为 0 或时钟回拨时原地冻结，不许把显示值推着乱走。
     @Test
     void zeroOrNegativeFrameTimeFreezesTheValue() {
         ValueTween tween = new ValueTween();
@@ -61,6 +68,7 @@ class ValueTweenTest {
         assertEquals(1.0F, tween.update(0.0F, -0.5F, MILLIS), 1.0E-4F);
     }
 
+    // 防回归：时长为 0（关掉格子动画）必须一帧到位，不能留下永远走不完的动画。
     @Test
     void zeroDurationJumpsStraightToTheTarget() {
         ValueTween tween = new ValueTween();
@@ -68,6 +76,7 @@ class ValueTweenTest {
         assertEquals(0.25F, tween.update(0.25F, 0.016F, 0), 1.0E-4F);
     }
 
+    // 防回归：同样的时长在高 / 低帧率下必须走同样远，动画速度不许随帧率漂。
     @Test
     void sameDurationCoversTheSameDistanceRegardlessOfFrameRate() {
         ValueTween fast = new ValueTween();

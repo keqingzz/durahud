@@ -26,10 +26,22 @@ import java.nio.file.Path;
  *
  * <p>文件里带一个 {@code configVersion}：升级后靠它把废弃键清掉、并在将来做字段改名时
  * 有据可依（见 {@link #migrate}）。预设文件用同一套读写，因此导出的预设一定能被导入。</p>
+ *
+ * <p>正常读盘链只有一条：{@link #load()} → 解析 JSON → {@link #migrate(JsonObject)} 升级键的集合
+ * → {@link #read(JsonObject)} 逐字段还原 → {@link DuraHudConfig#sanitize()} 夹取。写入则走
+ * {@link #save(DuraHudConfig)} / {@link #exportTo(java.nio.file.Path, DuraHudConfig)}，
+ * 两条路都用 {@link #toJson(DuraHudConfig)}，所以导出与主配置的字段永远一致。</p>
+ *
+ * <p><b>加字段要改的地方</b>：{@link #read(JsonObject)} 与 {@code DuraHudConfig.copyFrom} /
+ * {@code resetToDefaults}，再给 {@link #CONFIG_VERSION} +1、在 {@link #migrate(JsonObject)}
+ * 里补一个空分支（见 README 13.26）。</p>
  */
 public final class ConfigFile {
 
-    /** 当前配置格式版本。字段增删都要 +1，并在 migrate 里补一条升级路径。 */
+    /**
+     * 当前配置格式版本。字段增删都要 +1，并在 {@link #migrate(JsonObject)} 里补一条升级路径
+     * （哪怕那条分支什么都不用搬，也要留着占位，见 README 13.26）。
+     */
     public static final int CONFIG_VERSION = 7;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -70,6 +82,10 @@ public final class ConfigFile {
         return FabricLoader.getInstance().getConfigDir().resolve(PRESET_NAME);
     }
 
+    /**
+     * 读主配置并夹取，返回值永远可用（最坏情况是一份默认配置 + 一条 warn 日志）。
+     * 同时决定 {@link #shouldWriteBack()}：只有「首次运行」与「这次真的升级过」才会回写。
+     */
     public static DuraHudConfig load() {
         Path path = path();
         if (!Files.exists(path)) {
@@ -92,6 +108,7 @@ public final class ConfigFile {
         }
     }
 
+    /** 把整份配置写回 config/durahud.json（UTF-8，父目录不存在就先建）。 */
     public static void save(DuraHudConfig cfg) {
         write(path(), cfg, "配置");
     }
@@ -138,6 +155,10 @@ public final class ConfigFile {
         }
     }
 
+    /**
+     * 实际写盘的唯一入口，主配置与预设共用；返回是否成功，失败只记日志不抛。
+     * {@code what} 只用于日志（「配置」/「预设」），父目录为空时不建目录 —— 直接写当前目录。
+     */
     private static boolean write(Path path, DuraHudConfig cfg, String what) {
         try {
             Path parent = path.getParent();
@@ -157,7 +178,10 @@ public final class ConfigFile {
         return JsonParser.parseString(text).getAsJsonObject();
     }
 
-    /** 包内可见，理由同 {@link #parse(String)}。 */
+    /**
+     * 包内可见，理由同 {@link #parse(String)}。序列化 {@link DuraHudConfig} 的字段之后补上
+     * {@code configVersion} —— 版本号属于文件格式，不属于数据模型，所以不放在模型类里。
+     */
     static JsonObject toJson(DuraHudConfig cfg) {
         JsonObject root = GSON.toJsonTree(cfg).getAsJsonObject();
         root.addProperty(VERSION_KEY, CONFIG_VERSION);
@@ -165,14 +189,22 @@ public final class ConfigFile {
     }
 
     /**
-     * 按版本号逐级升级。每加一个版本就补一个 if 分支，旧文件永远能被读进来。
-     * 迁移只改键的集合，字段本身的缺省由 {@link #read} 的「有才覆盖」负责。
+     * 按版本号逐级升级。每加一个版本就补一个 {@code if} 分支，旧文件永远能被读进来；
+     * 什么都不用搬的版本也留一个空分支，这样「一个版本一个 if」的读法才成立。
+     *
+     * <p>迁移只改<b>键的集合</b>（改名 / 合并 / 删废弃键），字段本身的缺省与类型容错由
+     * {@link #read(JsonObject)} 的「有才覆盖」负责。返回值 = 是否需要回写磁盘，所以
+     * 「键都已经是当前版本」时不能返回 true，否则每次启动都会白写一次文件。</p>
      */
     static boolean migrate(JsonObject root) {
         int from = versionOf(root);
         if (from >= CONFIG_VERSION) {
-            return false;
+            return false;   // 已是当前版本：一个键都不碰，因此也不需要回写
         }
+
+        // ------------------------------------------------------------------
+        // 逐级升级：一个版本一个 if，空分支也要留着
+        // ------------------------------------------------------------------
         // 废弃键对<b>任何</b>旧文件都清掉。这些键在 v0 时期就存在，只会出现在旧文件里；以前只在
         // from < 1 时清，于是标着 v1..v5 的文件升级后仍会一直带着 barStyle / cellOpacity 这些垃圾键。
         for (String key : REMOVED_KEYS) {
@@ -186,18 +218,22 @@ public final class ConfigFile {
             }
             root.remove("onlyDurableHand");
         }
+
         if (from < 3) {
             // v2 → v3：新增 showWornNonDurable（缺省 false）。没有键要搬，所以这一步是空操作 ——
             // 保留分支是为了让「一个版本一个 if」的读法成立，新字段的缺省由 read 的「有才覆盖」给出。
         }
+
         if (from < 4) {
             // v3 → v4：新增 animateCells（缺省 true）与 cellFadeSpeed（缺省 NORMAL）。
             // 同样没有键要搬，理由见上一条。
         }
+
         if (from < 5) {
             // v4 → v5：新增 compactCells（缺省 true）。同样没有键要搬。该字段又在 v6 被合并掉，
             // 所以这一步现在只剩「老文件也走过一遍版本号」的意义。
         }
+
         if (from < 6) {
             // v5 → v6：三处合并。每条都只在「旧键有、新键还没有」时才写 —— 手改过的文件里
             // 已经存在的 animationMillis / valueDisplay / showEmptySlots 不能被这次迁移盖掉。
@@ -222,10 +258,14 @@ public final class ConfigFile {
             root.remove("showPercent");
             root.remove("compactCells");
         }
+
         if (from < 7) {
             // v6 → v7：新增 valueOffsetY（缺省 0 = 单行数值贴紧耐久条）。没有键要搬 ——
             // 老文件读出来就是 0，正是不想改动任何人观感的默认值。
         }
+        // ------------------------------------------------------------------
+        // 收尾：记上新版本号并留一条日志（返回值 = 要不要回写磁盘）
+        // ------------------------------------------------------------------
         root.addProperty(VERSION_KEY, CONFIG_VERSION);
         DuraHudClient.LOGGER.info("[DuraHUD] 配置已从版本 {} 升级到 {}。", from, CONFIG_VERSION);
         return true;
@@ -247,6 +287,7 @@ public final class ConfigFile {
                 && element.getAsBoolean();
     }
 
+    /** 迁移里读旧字符串：只有真的是 string 才算（数字 / null / 对象一律当没写）。 */
     private static boolean isString(JsonObject root, String key) {
         JsonElement element = root.get(key);
         return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isString();
@@ -265,11 +306,18 @@ public final class ConfigFile {
         };
     }
 
-    /** 把 JSON 读成配置；缺字段保留默认值（「有才覆盖」只在这里写一遍）。 */
-    /** 包内可见，理由同 {@link #parse(String)}。 */
+    /**
+     * 把 JSON 读成配置：缺字段保留默认值（「有才覆盖」只在这里写一遍），<b>不夹取</b> ——
+     * 夹取是 {@link DuraHudConfig#sanitize()} 的职责，read 只忠实还原，逐字段往返才可验证。
+     *
+     * <p>这里是「加字段要改的三处」之一（另两处是 {@code copyFrom} 与 {@code resetToDefaults}，
+     * 见 README 13.26）。包内可见，理由同 {@link #parse(String)}：离线单测要直接覆盖读写往返。</p>
+     */
     static DuraHudConfig read(JsonObject root) {
         DuraHudConfig cfg = new DuraHudConfig();
         Json json = new Json(root);
+        // 字段顺序与 DuraHudConfig 的声明顺序一致，方便逐行对照。
+        // ---- 显示：总开关、停靠与缩放 ----
         cfg.enabled = json.b("enabled", cfg.enabled);
         cfg.anchor = json.e("anchor", Anchor.class, cfg.anchor);
         cfg.orientation = json.e("orientation", Orientation.class, cfg.orientation);
@@ -279,6 +327,7 @@ public final class ConfigFile {
         cfg.offsetX = json.i("offsetX", cfg.offsetX);
         cfg.offsetY = json.i("offsetY", cfg.offsetY);
         cfg.scale = json.f("scale", cfg.scale);
+        // ---- 各槽位显隐与占位 ----
         cfg.showMainhand = json.b("showMainhand", cfg.showMainhand);
         cfg.showOffhand = json.b("showOffhand", cfg.showOffhand);
         cfg.showArmor = json.b("showArmor", cfg.showArmor);
@@ -288,6 +337,7 @@ public final class ConfigFile {
         cfg.showWornNonDurable = json.b("showWornNonDurable", cfg.showWornNonDurable);
         cfg.hideFull = json.b("hideFull", cfg.hideFull);
         cfg.showEmptySlots = json.b("showEmptySlots", cfg.showEmptySlots);
+        // ---- 外观：条 / 数值的落点与内容 ----
         cfg.valueDisplay = json.e("valueDisplay", ValueDisplay.class, cfg.valueDisplay);
         // 刻意不在这里夹取：夹取属于 sanitize()。read 的职责是「有才覆盖」，逐字段往返才可验证。
         cfg.valueOffsetY = json.i("valueOffsetY", cfg.valueOffsetY);
@@ -295,6 +345,7 @@ public final class ConfigFile {
         cfg.showItemIcons = json.b("showItemIcons", cfg.showItemIcons);
         cfg.animateCells = json.b("animateCells", cfg.animateCells);
         cfg.animationMillis = json.i("animationMillis", cfg.animationMillis);
+        // ---- 警示阈值（crit 与 warn 的先后关系由 sanitize 兜底）----
         cfg.highlightCritical = json.b("highlightCritical", cfg.highlightCritical);
         cfg.warnThreshold = json.i("warnThreshold", cfg.warnThreshold);
         cfg.critThreshold = json.i("critThreshold", cfg.critThreshold);
@@ -309,6 +360,9 @@ public final class ConfigFile {
      * {@code UnsupportedOperationException}，{@code getAsInt()} 在 {@code "90abc"} 上会抛
      * {@code NumberFormatException} —— 以前这些异常会冒到 {@link #load()} 的兜底分支，
      * 让<b>整份</b>配置退回默认值。（更糟的是客户端随后还会把它写回磁盘。）</p>
+     *
+     * <p>所以这里既不用 {@code has()}，也不直读 {@code getAsX()}：{@code has()} 对显式
+     * {@code null} 也返回 true，读完照样得判类型（见 README 13.14 与 9.15）。</p>
      */
     private static final class Json {
 
@@ -318,6 +372,7 @@ public final class ConfigFile {
             this.object = object;
         }
 
+        /** 读布尔；缺失 / null / 类型不符都返回 {@code current}（下同）。 */
         boolean b(String key, boolean current) {
             JsonPrimitive value = primitive(key);
             if (value == null) {
@@ -329,6 +384,7 @@ public final class ConfigFile {
             return reject(key, "布尔值", current);
         }
 
+        /** 读整数；走 double 再夹到 int 范围，绕开 Gson 对 int / long 的字符串解析限制。 */
         int i(String key, int current) {
             JsonPrimitive value = primitive(key);
             if (value == null) {
@@ -343,6 +399,7 @@ public final class ConfigFile {
             return reject(key, "整数", current);
         }
 
+        /** 读浮点；非有限值（NaN / Infinity）当类型不符处理。 */
         float f(String key, float current) {
             JsonPrimitive value = primitive(key);
             if (value == null) {
@@ -357,6 +414,7 @@ public final class ConfigFile {
             return reject(key, "数字", current);
         }
 
+        /** 读枚举：按名字忽略大小写匹配，认不出来的值（旧版本删掉的选项）静默退回默认值。 */
         <T extends Enum<T>> T e(String key, Class<T> type, T current) {
             JsonPrimitive value = primitive(key);
             if (value == null || !value.isString()) {

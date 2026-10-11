@@ -20,11 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>界面每换一页都会重建全部控件，所以「本页第几行」这类字段必须在 {@code init()} 里清空；
  * 漏一个就会在某次换页之后指向别的控件。取控件时也不许直接强转类型。</p>
+ *
+ * <p>失败意味着 §13.28 重演：2.1.2 的 {@code ClassCastException} 就是 {@code critRow} 漏复位之后
+ * {@code (NumberSliderWidget) widgets.get(critRow)} 盲转造成的 —— 点一下标签页就崩游戏。</p>
  */
 class ScreenRowResetTest {
 
     private static final String SCREEN = "src/main/java/dev/durahud/config/DuraHudConfigScreen.java";
 
+    // 防回归（2.1.2 崩溃）：漏一个 xxxRow 复位，换页后它指到上一页的行，取值就指错控件。
     @Test
     void everyRowFieldIsResetBeforeEachPageIsBuilt() throws IOException {
         String src = read(SCREEN);
@@ -41,10 +45,12 @@ class ScreenRowResetTest {
         }
     }
 
+    // 防回归（2.1.2 崩溃）：同一个行号在不同页上是不同控件，盲转就是 §13.28 的 ClassCastException。
     @Test
     void widgetTypesAreNeverCastBlindly() throws IOException {
         String src = read(SCREEN);
-        assertFalse(Pattern.compile("\\(\\s*(NumberSliderWidget|ButtonWidget|ClickableWidget)\\s*\\)\\s*widgets\\.get\\(")
+        assertFalse(
+                Pattern.compile("\\(\\s*(NumberSliderWidget|ButtonWidget|ClickableWidget)\\s*\\)\\s*widgets\\.get\\(")
                         .matcher(src).find(),
                 "widgets.get(...) 的结果不许直接强转：同一个行号在不同页上是不同控件，转错就崩");
         assertTrue(src.contains("instanceof NumberSliderWidget slider"), "取滑条时要按类型判断");

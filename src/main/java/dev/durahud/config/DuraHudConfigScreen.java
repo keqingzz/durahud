@@ -27,6 +27,15 @@ import java.util.function.DoubleConsumer;
  *
  * <p>每页的选项先登记成 {@link Option}（拿到位置与尺寸之后再造成控件），因此行数、列数、
  * 行高可以一次算准，不需要「先造再挪」。控件全部是原版控件（ButtonWidget / SliderWidget）。</p>
+ *
+ * <p>为什么必须「先登记后造控件」：{@code ClickableWidget} 没有 {@code setHeight}，控件高度
+ * 只能在构造时定死（见 README 13.11），所以布局必须先于控件存在。同理，这个类里没有一处
+ * 硬编码的「第 N 行」（见 README 13.12），位置与尺寸一律由 {@link ScreenLayout} 给出。</p>
+ *
+ * <p>三条贯穿全类的纪律：控件回调只置 {@link #dirty}（拖一次滑条会触发上百次回调，
+ * 见 README 13.15），夹取与落盘留到关屏时做一次；配置值一律经 {@code ConfigFile} 的
+ * 「先判类型再取值」读入（见 README 13.14 / 9.15）；换页会重建全部控件，所以行号字段必须在
+ * {@link #init()} 开头复位、取控件时必须判类型（见 README 13.28）。</p>
  */
 public class DuraHudConfigScreen extends Screen {
 
@@ -52,6 +61,7 @@ public class DuraHudConfigScreen extends Screen {
 
     private static final Tab[] TABS = Tab.values();
 
+    /** 关掉本界面后回到的界面（ModMenu / 标题界面进来时由调用方给出）。 */
     private final Screen parent;
     /** 当前配置：在 {@link #init()} 里取，避免在任何界面打开之前构造本界面时拿到 null。 */
     private DuraHudConfig cfg;
@@ -59,11 +69,15 @@ public class DuraHudConfigScreen extends Screen {
     private final List<Option> options = new ArrayList<>();
     /** 造出来的控件，与 {@link #options} 一一对应。 */
     private final List<ClickableWidget> widgets = new ArrayList<>();
+    /** 当前页；换页会重建全部控件，所以行号字段只在同一次 {@link #init()} 里有效（见 README 13.28）。 */
     private Tab tab = Tab.DISPLAY;
+    /** 本次 {@link #init()} 算出的布局；{@link #render} 用它画标签高亮与底部提示行。 */
     private ScreenLayout layout;
+    /** 底部提示行的文字（导出 / 导入的结果）；null = 不画。 */
     private Text status;
-    /** 需要置灰的行下标（-1 = 本页没有）；置灰条件见 {@link #refreshDependencies()}。 */
+    /** 「显示无耐久穿戴物」所在的行（-1 = 本页没有）；跟着 onlyDurableItems 置灰。 */
     private int wornNonDurableRow = -1;
+    /** 「动画时长」所在的行（-1 = 本页没有）；跟着 animateCells 置灰。 */
     private int animationRow = -1;
     /** 警示页的 crit 阈值所在的行（-1 = 本页没有）。 */
     private int critRow = -1;
@@ -72,6 +86,12 @@ public class DuraHudConfigScreen extends Screen {
     /** 界面里改过东西：关屏时统一落盘（滑条拖一次会触发上百次值变化）。 */
     private boolean dirty;
 
+    /**
+     * 标题带当前版本号（{@link DuraHudClient#version()}），进游戏后一眼能确认装的是哪一版。
+     * 配置实例刻意留到 {@link #init()} 再取：早于模组初始化构造本界面时它还是 null。
+     *
+     * @param parent 关掉后回到的界面
+     */
     public DuraHudConfigScreen(Screen parent) {
         super(Text.translatable("durahud.config.title").append(Text.literal(" v" + DuraHudClient.version())));
         this.parent = parent;
@@ -83,6 +103,19 @@ public class DuraHudConfigScreen extends Screen {
         ClickableWidget create(int x, int y, int width, int height);
     }
 
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+    // 生命周期：建界面 / 复位行号 / 统一落盘
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+    /**
+     * 重建界面，顺序不能变：取配置 → 复位行号字段 → 登记当页选项 → 算布局 →
+     * 带着最终尺寸造控件 → 造分页标签与底部按钮 → 刷新从属项。
+     *
+     * <p>布局要等选项登记完才知道行数（{@code options.size()}），而控件必须一次就带着
+     * 最终尺寸造出来（见 README 13.11）。顶部的行号复位是硬性要求：换页与「恢复默认」
+     * 都会重进这里，上一次的行号会落到别的控件上（见 README 13.28）。</p>
+     */
     @Override
     protected void init() {
         cfg = DuraHudClient.config();
@@ -113,7 +146,7 @@ public class DuraHudConfigScreen extends Screen {
      *
      * <p>行号只在同一次 {@link #buildPage()} 里有效：换页之后同一个下标可能落在按钮上，
      * 直接强转会抛 {@code ClassCastException} 把游戏崩掉，2.1.2 修的就是这个。
-     * 这里既查范围也判类型，最坏情况只是拿不到滑条、crit 的显示不同步。</p>
+     * 这里既查范围也判类型，最坏情况只是拿不到滑条、crit 的显示不同步（见 README 13.28）。</p>
      */
     private NumberSliderWidget sliderAt(int row) {
         if (row < 0 || row >= widgets.size()) {
@@ -128,6 +161,10 @@ public class DuraHudConfigScreen extends Screen {
         dirty = true;
     }
 
+    /**
+     * 关屏（换界面 / ESC / 点「完成」）时统一收尾：确实改过东西才夹取 + 落盘一次。
+     * 回调里不写盘的理由见 {@link #markDirty()} 与 README 13.15。
+     */
     @Override
     public void removed() {
         super.removed();
@@ -142,6 +179,7 @@ public class DuraHudConfigScreen extends Screen {
     // 各页的选项
     // ------------------------------------------------------------------
 
+    /** 按当前页分派到对应的 {@code buildXxxPage}；每个页面方法只管往 {@link #options} 里登记。 */
     private void buildPage() {
         switch (tab) {
             case DISPLAY -> buildDisplayPage();
@@ -239,6 +277,7 @@ public class DuraHudConfigScreen extends Screen {
         setCrit(cfg.critThreshold);
     }
 
+    /** 夹好 crit（0 - warn - 1，规则与 {@code sanitize()} 一致）并同步滑条显示；只置 dirty。 */
     private void setCrit(int value) {
         cfg.critThreshold = Math.max(0, Math.min(cfg.warnThreshold - 1, value));
         if (critSlider != null) {
@@ -247,6 +286,7 @@ public class DuraHudConfigScreen extends Screen {
         markDirty();
     }
 
+    /** 登记一个开关行：文字是「<label>: 开 / 关」，点一下翻转并刷新从属项的置灰状态。 */
     private void toggle(String labelKey, boolean value, Consumer<Boolean> setter, String tipKey) {
         options.add((x, y, width, height) -> {
             boolean[] state = { value };
@@ -262,6 +302,7 @@ public class DuraHudConfigScreen extends Screen {
         });
     }
 
+    /** 登记一个枚举循环行：点一下切到下一个取值（到头绕回第一个），文字走 {@link #enumLabel}。 */
     private <T extends Enum<T>> void cycle(String labelKey, String valuePrefix, T[] values, T current,
                                            Consumer<T> setter) {
         options.add((x, y, width, height) -> {
@@ -277,6 +318,7 @@ public class DuraHudConfigScreen extends Screen {
         });
     }
 
+    /** 登记一个滑条行；onCommit 只接 {@link #markDirty()}，拖动期间它会被调几十上百次（README 13.15）。 */
     private void slider(String labelKey, double min, double max, double value, boolean integer, boolean autoAtZero,
                         DoubleConsumer setter, String tipKey) {
         options.add((x, y, width, height) -> {
@@ -288,6 +330,7 @@ public class DuraHudConfigScreen extends Screen {
         });
     }
 
+    /** 给了提示键才挂悬停提示（只有含义不直观的选项才带）。 */
     private static void applyTip(ClickableWidget widget, String tipKey) {
         if (tipKey != null) {
             widget.setTooltip(Tooltip.of(Text.translatable(tipKey)));
@@ -298,7 +341,12 @@ public class DuraHudConfigScreen extends Screen {
     // 分页标签与底部按钮
     // ------------------------------------------------------------------
 
-    /** 当前页的标签加粗，并在下面画一条高亮线（见 {@link #render}），比做成禁用态更清楚。 */
+    /**
+     * 当前页的标签加粗，并在标签列左侧画一条高亮竖线（见 {@link #render}），比做成禁用态更清楚。
+     *
+     * <p>点标签只改 {@link #tab} 再 {@code clearAndInit()}：换页会重建全部控件，所以
+     * {@link #init()} 开头必须把行号字段复位（见 README 13.28）。</p>
+     */
     private void addTabs() {
         for (int i = 0; i < TABS.length; i++) {
             Tab target = TABS[i];
@@ -345,6 +393,7 @@ public class DuraHudConfigScreen extends Screen {
         setActive(animationRow, cfg.animateCells);
     }
 
+    /** 按下标置灰一行；下标为 -1（本页没有这一项）时什么都不做。 */
     private void setActive(int index, boolean active) {
         if (index >= 0 && index < widgets.size()) {
             widgets.get(index).active = active;
@@ -443,6 +492,12 @@ public class DuraHudConfigScreen extends Screen {
     // 渲染
     // ------------------------------------------------------------------
 
+    /**
+     * 画背景、控件、当前页的高亮竖线与底部提示行。
+     *
+     * <p>开头必须先 {@code renderBackground}：{@code Screen.render} 只把 drawables 画一遍、
+     * 不画背景（javap 实测，见 README 9.14），少了它从 ModMenu / 标题界面进来时背后是透的。</p>
+     */
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         // 原版每个界面都在自己的 render 开头调这句：Screen.render 只把 drawables 画一遍，
@@ -463,6 +518,7 @@ public class DuraHudConfigScreen extends Screen {
         }
     }
 
+    /** 关屏：先落盘再切回父界面；{@link #removed()} 只在真的改过时才写，这里保证一定写一次。 */
     @Override
     public void close() {
         cfg.save();
@@ -471,6 +527,7 @@ public class DuraHudConfigScreen extends Screen {
         }
     }
 
+    /** 不暂停游戏：改设置时后面的世界继续跑，方便对着真实画面调位置。 */
     @Override
     public boolean shouldPause() {
         return false;
@@ -480,11 +537,13 @@ public class DuraHudConfigScreen extends Screen {
     // 文本
     // ------------------------------------------------------------------
 
+    /** 「<label>: 开 / 关」文本（复用原版 {@code options.on} / {@code options.off}，自动跟随语言）。 */
     private static Text onOff(String labelKey, boolean value) {
         return Text.translatable(labelKey).append(": ")
                 .append(Text.translatable(value ? "options.on" : "options.off"));
     }
 
+    /** 「<label>: <枚举值>」文本；枚举值那一半交给 {@link #enumValue(String, Enum)}。 */
     private static Text enumLabel(String labelKey, String valuePrefix, Enum<?> value) {
         return Text.translatable(labelKey).append(": ").append(enumValue(valuePrefix, value));
     }
@@ -496,6 +555,7 @@ public class DuraHudConfigScreen extends Screen {
         return key.equals(translated.getString()) ? Text.literal(value.name()) : translated;
     }
 
+    /** 枚举名转小驼峰，拼出 {@code <prefix>.<camel>} 形式的翻译键（如 HOTBAR_ABOVE -> hotbarAbove）。 */
     private static String camel(String upper) {
         StringBuilder out = new StringBuilder(upper.length());
         boolean nextUpper = false;

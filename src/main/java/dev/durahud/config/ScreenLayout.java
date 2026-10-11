@@ -17,14 +17,20 @@ package dev.durahud.config;
  * 硬性夹取（必要时扁到 1 像素），最后标签列与选项块整体再夹进窗口 —— 任何尺寸下都有
  * {@code tabX()+tabW <= width}、{@code blockLeft+blockWidth <= width}、
  * {@code buttonX(3)+buttonW <= width}，且所有 y 都落在 {@code [0, height]} 里。</p>
+ *
+ * <p>构造函数一次算完全部尺寸，结果都是只读的 public final 快照；界面按
+ * {@code columnX(columnOf(i))} / {@code rowY(i)} 取位置即可，代码里没有一处硬编码的
+ * 「第 N 行」—— 行数由当页登记了几个选项决定（见 README 13.12）。</p>
  */
 public final class ScreenLayout {
 
+    /** 窗口四周留的边距；可用宽度就是「窗口宽 - 2 * MARGIN」。 */
     public static final int MARGIN = 6;
     /** 顶部标题占的高度（原版在顶部居中画标题）。 */
     public static final int TITLE_H = 18;
     /** 标题与内容之间的空隙。 */
     public static final int TOP_GAP = 4;
+    /** 相邻标签之间的竖向间隔。 */
     public static final int TAB_GAP = 3;
     /** 标签高度按窗口高度反推：窗口越矮标签越扁，正常窗口下不会低于这个值（否则点不中）；
      *  窗口矮到连它都放不下时（见构造函数末尾的兜底夹取）会继续变扁，优先保证不出屏。 */
@@ -35,62 +41,109 @@ public final class ScreenLayout {
     public static final int TAB_W_MAX = 72;
     /** 标签列与选项块之间的间隔。 */
     public static final int GAP = 8;
+    /** 相邻底部按钮之间的横向间隔。 */
     public static final int BTN_GAP = 4;
+    /** 底部按钮的高度；原版按钮的标准高度，且必须在造控件时给定（见 README 13.11）。 */
     public static final int BUTTON_H = 20;
+    /** 底部按钮个数：恢复默认 / 导出 / 导入 / 完成。 */
     public static final int BUTTON_COUNT = 4;
+    /** 按钮行下沿离窗口底边的距离。 */
     public static final int BOTTOM_MARGIN = 6;
     /** 底部提示行（导出 / 导入的结果）的高度。 */
     public static final int STATUS_H = 11;
+    /** 提示行与按钮行之间的间隔。 */
     public static final int STATUS_GAP = 3;
     /** 行高的正常下限；窗口矮到连它都放不下时同样会继续变扁（见构造函数末尾的兜底夹取）。 */
     public static final int ROW_H_MIN = 8;
     public static final int ROW_H_MAX = 20;
     /** 至少要这么宽才排成两列。 */
     public static final int COL_MIN_W = 150;
+    /** 单列的最大宽度：再宽也只是把标签列挤到边上，并不会更好读。 */
     public static final int COL_MAX_W = 220;
 
+    /** 窗口宽度（构造参数原样留档，便于调用方复核）。 */
     public final int width;
+    /** 窗口高度（同上）。 */
     public final int height;
+    /** 当页登记的选项个数（已夹到 >= 0）。 */
     public final int rows;
+    /** 分页标签个数（已夹到 >= 0）。 */
     public final int tabCount;
+    /** 标签列宽度：窗口宽度的五分之一，夹在 TAB_W_MIN - TAB_W_MAX 之间。 */
     public final int tabW;
+    /** 单个标签的高度：内容带高度按标签数均分，再夹到「按钮行上方还剩多少」以内。 */
     public final int tabH;
     /** 标签列的左上角 x。 */
     public final int tabLeft;
     /** 第一行标签的 y；整列已垂直居中。 */
     public final int tabTop;
+    /** 内容带上沿（标题下沿）；空间不足时会往上挪，不会越过下面的边界。 */
     public final int contentTop;
+    /** 内容带下沿（提示行上沿与按钮行上沿取更靠上的那个）。 */
     public final int contentBottom;
+    /** 选项列数：内容宽够两列就是 2，否则 1。 */
     public final int columns;
+    /** 单列宽度；两列时已经扣掉列间间隔。 */
     public final int colW;
+    /** 每列行数；行数除不尽时前面的列各多一行。 */
     public final int rowsPerColumn;
+    /** 行高：内容带高度按每列行数均分，夹在 ROW_H_MIN - ROW_H_MAX 与「按钮行上方还剩多少」之间。 */
     public final int rowH;
     /** 选项块第一行的 y；整块已在这段高度里垂直居中，与标签列齐平。 */
     public final int rowsTop;
+    /** 选项块左边界（标签列右边缘 + GAP）。 */
     public final int blockLeft;
+    /** 选项块总宽：{@code columns * colW + (columns - 1) * GAP}。 */
     public final int blockWidth;
+    /** 按钮行上沿的 y。 */
     public final int buttonY;
+    /** 单个底部按钮的宽度：按钮行可用宽度按 4 等分。 */
     public final int buttonW;
     /** 底部按钮行的左端 x：正常情况与选项块左对齐，极小窗口下改用窗口边距。 */
     private final int buttonLeft;
+    /** 提示文字的 y（导出 / 导入的结果居中画在这一行）。 */
     public final int statusY;
 
+    /** 按当前窗口尺寸与当页选项数算一次布局；只被 {@code DuraHudConfigScreen.init()} 调一次。 */
     public static ScreenLayout of(int width, int height, int rows, int tabCount) {
         return new ScreenLayout(width, height, rows, tabCount);
     }
 
+    /**
+     * 布局算法，按下面七段依次算完（每段都有硬夹取，所以极小窗口下只会被压扁、不会越界）：
+     *
+     * <ol>
+     *   <li>横向可用宽度：窗口宽去掉两侧边距，<b>不设下限</b>；</li>
+     *   <li>纵向：按钮行先钉在窗口下沿，标题下沿与提示行上沿在放不下时依次上移；</li>
+     *   <li>内容带：上面两者之间的那一段，标签列与选项块共用；</li>
+     *   <li>标签列：宽度取窗口宽度的五分之一，高度按标签数均分；</li>
+     *   <li>选项块：标签列右边剩下的宽度，够两列就排两列，行高按内容带均分；</li>
+     *   <li>整体水平居中：标签列 + 间隔 + 选项块作为一个整体；</li>
+     *   <li>按钮行：默认与选项块同宽，窄到分不出四个按钮就改用整条可用宽度。</li>
+     * </ol>
+     */
     private ScreenLayout(int width, int height, int rows, int tabCount) {
         this.width = width;
         this.height = height;
         this.rows = Math.max(0, rows);
         this.tabCount = Math.max(0, tabCount);
 
-        // 水平：usableW 不设下限 —— 窗口只有 40 宽时「至少 80」会让整块跑到屏幕外。
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 1. 横向可用宽度
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // usableW 不设下限 —— 窗口只有 40 宽时「至少 80」会让整块跑到屏幕外。
         // 标签列宽度也允许压到 TAB_W_MIN 以下（最多给选项块留出 GAP），于是
         // 「标签列 + 间隔 + 选项块」的整体右边界恒不超过 width - MARGIN。
         int usableW = Math.max(0, this.width - MARGIN * 2);
 
-        // 纵向：按钮行贴着窗口下沿，标题下沿与提示行上沿在空间不够时依次退让。
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 2. 纵向：按钮行、标题与提示行
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 按钮行贴着窗口下沿，标题下沿与提示行上沿在空间不够时依次退让。
         // 窗口太矮时这几段会互相重叠（那时本来也排不下），但坐标都留在窗口里。
         this.buttonY = clamp(height - BOTTOM_MARGIN - BUTTON_H, 0, Math.max(0, height - BUTTON_H));
         int above = Math.max(0, height - MARGIN - BUTTON_H);
@@ -98,11 +151,21 @@ public final class ScreenLayout {
         this.statusY = clamp(buttonY - STATUS_H, 0, above);
         this.contentBottom = Math.max(contentTop, Math.min(buttonY, statusY - STATUS_GAP));
 
-        // 内容带：标题下沿到提示行上沿。标签列与选项块都在这段高度里垂直居中，
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 3. 内容带：标签列与选项块共用这段高度
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 标题下沿到提示行上沿。标签列与选项块都在这段高度里垂直居中，
         // 于是二级菜单（选项行）与左侧六大标签在视觉上齐平。
         int band = Math.max(0, contentBottom - contentTop);
 
-        // 标签列：宽度按窗口宽度的五分之一取，高度由内容带均分；窄 / 矮窗口里两者都会缩水。
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 4. 标签列（竖排的分页标签）
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 宽度按窗口宽度的五分之一取，高度由内容带均分；窄 / 矮窗口里两者都会缩水。
         // tabHCap 是「按钮行上方还放得下多高」的硬上限，极小窗口里它比 TAB_H_MIN 还小，
         // 于是标签会一路扁到 1 像素 —— 40x30 那种窗口本来就没有可用的格局，优先不出屏。
         int tabWMax = Math.min(TAB_W_MAX, Math.max(0, usableW - GAP));
@@ -115,7 +178,12 @@ public final class ScreenLayout {
         this.tabTop = clamp(contentTop + Math.max(0, (band - tabsH) / 2), 0,
                 Math.max(0, Math.min(buttonY, height - MARGIN) - tabsH));
 
-        // 选项块：标签列右边剩下的宽度，够两列就排两列；行高按内容带均分，整块同样居中。
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 5. 选项块（当页登记的全部控件）
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 标签列右边剩下的宽度，够两列就排两列；行高按内容带均分，整块同样居中。
         // rowHCap 同理：按钮行上方放不下最小行高时，行高会被压到 1 像素。
         int contentW = Math.max(0, usableW - tabW - GAP);
         this.columns = contentW >= COL_MIN_W * 2 + GAP ? 2 : 1;
@@ -128,12 +196,22 @@ public final class ScreenLayout {
         this.colW = Math.min(COL_MAX_W, Math.max(0, (contentW - (columns - 1) * GAP) / columns));
         this.blockWidth = columns * colW + (columns - 1) * GAP;
 
-        // 标签列 + 选项块整体水平居中。
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 6. 整体水平居中：标签列 + 间隔 + 选项块
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 居中而不是靠左：标签列因此落在屏幕中央偏左，两侧留白均衡。
         int group = tabW + GAP + blockWidth;
         this.tabLeft = Math.max(MARGIN, (this.width - group) / 2);
         this.blockLeft = tabLeft + tabW + GAP;
 
-        // 按钮行：默认与选项块同宽（从左端排满四个按钮）；选项块窄到装不下四个按钮时，
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 7. 底部按钮行
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 默认与选项块同宽（从左端排满四个按钮）；选项块窄到装不下四个按钮时，
         // 整行改用窗口可用宽度，仍然不出屏。
         int buttonSpace = Math.min(blockWidth, Math.max(0, this.width - MARGIN - blockLeft));
         if ((buttonSpace - (BUTTON_COUNT - 1) * BTN_GAP) / BUTTON_COUNT < 1) {
@@ -202,6 +280,7 @@ public final class ScreenLayout {
         return buttonLeft + index * (buttonW + BTN_GAP);
     }
 
+    /** 夹取三板斧：上面每一步的「硬夹取」都是它，极小窗口下所有尺寸靠它留在窗口里。 */
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }

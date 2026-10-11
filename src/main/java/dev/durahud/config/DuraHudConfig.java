@@ -1,15 +1,28 @@
 package dev.durahud.config;
 
 /**
- * 配置数据 + 取值校验。字段顺序即配置文件顺序；读写见 {@link ConfigFile}。
- * 所有字段都是 public 的普通类型，方便直接赋值（不需要 getter/setter 那层噪声）。
+ * 配置数据模型 + 取值校验：纯数据、无 IO，字段的声明顺序就是 JSON 里出现的顺序。
+ *
+ * <p>所有字段都是 public 的普通类型，方便直接赋值（省掉 getter/setter 那层噪声）；
+ * 持久化与容错读取全在 {@link ConfigFile} 里，本类只负责「内存里的值合不合法」。</p>
+ *
+ * <p><b>加字段要改的地方</b>：本类 + {@code ConfigFile.read} / {@code copyFrom} /
+ * {@code resetToDefaults} 三处都要补上（漏一处的表现是「存得进去，导入预设后却丢值」），
+ * 另外别忘 {@code ConfigFile.CONFIG_VERSION} +1 与 {@code migrate} 里的空分支 ——
+ * {@code ConfigFieldCoverageTest} 逐字段盯着这几件事，见 README 13.26。</p>
  */
 public class DuraHudConfig {
 
+    /**
+     * 整块 HUD 贴在哪。{@code HOTBAR_*} 三个跟着热键栏走（热键栏位置本身会随窗口尺寸变），
+     * 四个角是固定的屏幕角落，{@code CUSTOM} 表示由 {@code offsetX} / {@code offsetY}
+     * 直接给绝对坐标 —— 编辑模式拖动、方向键微调之后就是这一档。
+     */
     public enum Anchor {
         HOTBAR_ABOVE, HOTBAR_LEFT, HOTBAR_RIGHT, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CUSTOM
     }
 
+    /** 格子排列方向：HORIZONTAL = 横向一排，VERTICAL = 纵向一列。 */
     public enum Orientation {
         HORIZONTAL, VERTICAL
     }
@@ -44,8 +57,11 @@ public class DuraHudConfig {
      */
     public static final int VALUE_OFFSET_LIMIT = 9;
 
+    /** 总开关；关掉后 HUD 完全不画，只有编辑模式例外（否则再也改不回来）。 */
     public boolean enabled = true;
+    /** 停靠位置；选 {@code CUSTOM} 时位置由 {@code offsetX} / {@code offsetY} 给出。 */
     public Anchor anchor = DEFAULT_ANCHOR;
+    /** 格子排列方向。 */
     public Orientation orientation = Orientation.HORIZONTAL;
     /** 条在格子的哪一侧。默认格子上方。 */
     public BarSide barPlacement = BarSide.ABOVE;
@@ -53,11 +69,17 @@ public class DuraHudConfig {
     public ValuePlacement valuePlacement = ValuePlacement.ABOVE;
     /** 0 = 自动（上下时同格子宽，左右时 60）。 */
     public int barLength = 0;
+    /** CUSTOM 锚点下 HUD 左上角的屏幕 x（缩放后的逻辑像素）。<b>刻意不夹取</b>，见 README 13.18。 */
     public int offsetX = 0;
+    /** CUSTOM 锚点下 HUD 左上角的屏幕 y（缩放后的逻辑像素）。<b>刻意不夹取</b>，见 README 13.18。 */
     public int offsetY = 0;
+    /** 整体缩放；sanitize 后落在 0.25 - 4，非正 / 非有限值按 1 处理。 */
     public float scale = 1.0F;
+    /** 主手槽位显隐。 */
     public boolean showMainhand = true;
+    /** 副手槽位显隐。 */
     public boolean showOffhand = true;
+    /** 四个盔甲槽位显隐；空槽位的边框与占位另受 {@code showEmptySlots} 影响。 */
     public boolean showArmor = true;
     /** 额外装备槽（Trinkets 等模组）里的物品也显示在 HUD 上；没有对应模组时无效果。 */
     public boolean showTrinkets = true;
@@ -88,25 +110,40 @@ public class DuraHudConfig {
      * 耐久条，这里只是允许再挪一点点。它<b>只挪数字</b> —— 槽位、格子与整块 HUD 的尺寸都不变。
      */
     public int valueOffsetY = 0;
+    /** 画格子边框（空盔甲格的边框也归它管）。 */
     public boolean showSlotFrames = true;
+    /** 画物品图标；关掉后只剩边框与条 / 数字。 */
     public boolean showItemIcons = true;
     /** 格子出现/消失时淡入淡出；关掉就是旧的「直接出现、直接消失」。 */
     public boolean animateCells = true;
     /** 淡入淡出与平滑移动的时长（毫秒）；只在 {@link #animateCells} 开着时有用。 */
     public int animationMillis = 200;
+    /** 濒危高亮：比例低到 {@code critThreshold} 的格子加一圈警示框。 */
     public boolean highlightCritical = true;
+    /** 泛黄的耐久百分比阈值，夹在 1 - 100。 */
     public int warnThreshold = 50;
+    /** 泛红的耐久百分比阈值，夹在 0 - ({@code warnThreshold} - 1)，所以永远比 warn 至少小 1。 */
     public int critThreshold = 20;
 
     /** 运行期状态，不写入文件。 */
     public transient boolean editMode = false;
 
+    /** 读配置文件，等价于 {@link ConfigFile#load()}；调用方不需要知道路径与格式。 */
     public static DuraHudConfig load() {
         return ConfigFile.load();
     }
 
-    /** 把读到的值夹到合法区间；任何来源（手改 JSON、滑条、旧版本文件）都过这一关。 */
+    /**
+     * 把值夹到合法区间。任何来源（手改 JSON、拖滑条、导入预设、旧版本文件）都过这一关，
+     * 唯一的例外是 {@code offsetX} / {@code offsetY}（原因见方法内注释与 README 13.18）。
+     *
+     * <p>规则一览：枚举为 null 时回默认值；{@code animationMillis} 夹 50 - 1000；{@code scale}
+     * 非正或非有限值先回 1.0 再夹 0.25 - 4；{@code barLength} 夹 0 - 182；{@code valueOffsetY}
+     * 夹 ±{@link #VALUE_OFFSET_LIMIT}；{@code warnThreshold} 夹 1 - 100；{@code critThreshold}
+     * 夹 0 - ({@code warn} - 1)。越界的绝对值不报错，直接拉到边界。</p>
+     */
     public void sanitize() {
+        // 枚举兜底：null 会在下游的 switch / 比较里直接 NPE，宁可悄悄回默认值。
         if (anchor == null) {
             anchor = DEFAULT_ANCHOR;
         }
@@ -122,6 +159,7 @@ public class DuraHudConfig {
         if (valueDisplay == null) {
             valueDisplay = ValueDisplay.VALUE;
         }
+        // 数值夹取：一律拉到最近的边界，不报错也不保留越界值。
         animationMillis = Math.max(50, Math.min(1000, animationMillis));
         if (!(scale > 0.0F)) {
             scale = 1.0F;
@@ -137,11 +175,17 @@ public class DuraHudConfig {
         critThreshold = Math.max(0, Math.min(warnThreshold - 1, critThreshold));
     }
 
+    /** 把当前值写回 config/durahud.json；失败只记一条日志，不抛给调用方。 */
     public void save() {
         ConfigFile.save(this);
     }
 
-    /** 逐字段拷贝（导入预设、恢复默认值共用）。editMode 属于运行期状态，刻意不拷贝。 */
+    /**
+     * 逐字段拷贝（导入预设、恢复默认值共用）。editMode 属于运行期状态，刻意不拷贝。
+     *
+     * <p>这里是「加字段要改的三处」之一：新字段漏在这里，导入预设时那一项会保持旧值
+     * （见 README 13.26）。</p>
+     */
     public void copyFrom(DuraHudConfig other) {
         this.enabled = other.enabled;
         this.anchor = other.anchor;
@@ -171,6 +215,12 @@ public class DuraHudConfig {
         this.critThreshold = other.critThreshold;
     }
 
+    /**
+     * 恢复出厂默认值：先照 {@code new DuraHudConfig()} 的字段初始值整份拷过来，再夹一次。
+     *
+     * <p>拷贝而不是 {@code cfg = new ...}，是因为界面与入口都拿着同一个实例的引用；
+     * 这也意味着新字段必须进 {@link #copyFrom(DuraHudConfig)}，否则「重置」会漏掉它。</p>
+     */
     public void resetToDefaults() {
         copyFrom(new DuraHudConfig());
         sanitize();

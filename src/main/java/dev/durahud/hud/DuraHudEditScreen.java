@@ -29,16 +29,19 @@ public class DuraHudEditScreen extends Screen {
     private double grabDX;
     private double grabDY;
 
+    /** 标题留空：屏幕上只用一条青色边框表示「正在编辑」，不画标题（{@link #renderBackground} 也全透明）。 */
     public DuraHudEditScreen() {
         super(Text.empty());
     }
 
     @Override
+    /** 打开即进入编辑模式：HUD 因此在被关掉 / 被 F1 隐藏时仍会绘制（见 HudRenderer.shouldDraw）。 */
     protected void init() {
         cfg.editMode = true;
     }
 
     @Override
+    /** 退出（ESC 或 H）时复位编辑模式与拖动状态，并统一落盘一次（{@link #flush()}）。 */
     public void removed() {
         cfg.editMode = false;
         dragging = false;
@@ -46,6 +49,7 @@ public class DuraHudEditScreen extends Screen {
     }
 
     @Override
+    /** 不暂停世界：编辑时要能一边拖、一边看 HUD 在真实画面里的效果。 */
     public boolean shouldPause() {
         return false;
     }
@@ -56,6 +60,7 @@ public class DuraHudEditScreen extends Screen {
     }
 
     @Override
+    /** 只有按住 HUD 本体（{@link HudLayout#containsScreen}）才开始拖；记下抓取偏移，拖动时不跳。 */
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         HudLayout layout = HudLayout.last();
         if (button == 0 && layout != null && layout.containsScreen(mouseX, mouseY)) {
@@ -68,6 +73,7 @@ public class DuraHudEditScreen extends Screen {
     }
 
     @Override
+    /** 拖动中用「指针 − 抓取偏移」当整块的新左上角（{@link #moveTo} 会顺势切成 CUSTOM 锚点）。 */
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (dragging) {
             moveTo(mouseX - grabDX, mouseY - grabDY);
@@ -77,6 +83,7 @@ public class DuraHudEditScreen extends Screen {
     }
 
     @Override
+    /** 松手即落盘一次；拖动过程中的每一帧都不写文件（见 {@link #scale(float)}）。 */
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (dragging) {
             dragging = false;
@@ -87,12 +94,14 @@ public class DuraHudEditScreen extends Screen {
     }
 
     @Override
+    /** 滚轮每格 0.05 缩放；范围由 {@link #scale(float)} 夹取。 */
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         scale((float) amount * 0.05F);
         return true;
     }
 
     @Override
+    /** 方向键微调（Shift 一次 10px）、+/- 缩放、R 复位、H 关闭；其余按键交回父类。 */
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         int step = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
         switch (keyCode) {
@@ -156,6 +165,7 @@ public class DuraHudEditScreen extends Screen {
         dirty = true;
     }
 
+    /** 把内存里的改动落盘一次，没改过就什么都不做 —— 滚轮与方向键欠下的写盘都在这里还。 */
     private void flush() {
         if (dirty) {
             dirty = false;

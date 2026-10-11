@@ -45,9 +45,11 @@ public final class HudEntries {
     private List<ItemStack> extraStacks = Collections.emptyList();
     private long extraStacksTick = Long.MIN_VALUE;
 
+    /** 本帧真正要画的格子；每帧由 {@link #rebuildView} 从头填，只有前 {@code count} 项有效。 */
     private final DurabilityEntry[] view = new DurabilityEntry[ORDER.length + MAX_EXTRA];
     private int count;
 
+    /** 一次性造好 6 个固定部位与 12 个额外槽的对象；此后每帧只复用它们（每帧零分配的前提）。 */
     public HudEntries() {
         for (int i = 0; i < ORDER.length; i++) {
             all[i] = new DurabilityEntry(ORDER[i], ItemStack.EMPTY);
@@ -58,10 +60,12 @@ public final class HudEntries {
         }
     }
 
+    /** 本帧视图里的格子数（{@code 0..view.length}）；{@link #get} 只在这个范围内有效。 */
     public int count() {
         return count;
     }
 
+    /** 视图里的第 {@code index} 个格子；下标必须落在 {@code 0..count() - 1} 内。 */
     public DurabilityEntry get(int index) {
         return view[index];
     }
@@ -102,6 +106,7 @@ public final class HudEntries {
      * 所以饰品集合变化时，只有真正变动的那几格会淡入 / 淡出，其余格子保持自己的状态。</p>
      */
     private void refreshExtra(PlayerEntity player, DuraHudConfig cfg, float dtSeconds) {
+        // ① 饰品列表每 tick 至多要一次：槽位内容只会在 tick 里变，而玩家 age 正好是 tick 计数。
         if (player != null && cfg.showTrinkets) {
             if (player.age != extraStacksTick) {
                 extraStacksTick = player.age;
@@ -111,6 +116,7 @@ public final class HudEntries {
             extraStacks = Collections.emptyList();
             extraStacksTick = Long.MIN_VALUE;
         }
+        // ② 认领：每帧都从头认一次，走「identity -> 同类物品 -> 空闲格 -> 最接近淡完」的顺序。
         Arrays.fill(extraClaimed, false);
         if (extraStacks.isEmpty() && extrasIdle) {
             return;   // 快路径：没东西要认领、池子也全空闲，这一帧不必碰池子（见 extrasIdle）
@@ -128,6 +134,7 @@ public final class HudEntries {
             extraSlot[index] = slot;
             extraClaimed[index] = true;
         }
+        // ③ 推进：没被认领的格子开始淡出，但槽位号先留着；这一帧是否还有格子占位决定下一帧能否走快路径。
         boolean busy = false;
         for (int i = 0; i < MAX_EXTRA; i++) {
             if (!extraClaimed[i]) {

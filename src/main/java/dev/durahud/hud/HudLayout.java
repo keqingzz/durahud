@@ -74,6 +74,8 @@ public final class HudLayout {
     }
 
     private void rebuild(DuraHudConfig cfg, int cellCount, int viewW, int viewH, int reservedText) {
+        // ① 输入：格子数、方向、缩放、条长、预留文本宽度。每一项都先夹到安全范围再参与运算 ——
+        // 调用方里有直接改配置字段的路径（编辑界面的滑条、单测），不能假设已经 sanitize 过。
         cells = Math.max(1, cellCount);
         vertical = cfg.orientation == Orientation.VERTICAL;
         barSide = cfg.barPlacement;
@@ -95,7 +97,7 @@ public final class HudLayout {
         valueOffsetY = Math.max(-DuraHudConfig.VALUE_OFFSET_LIMIT,
                 Math.min(DuraHudConfig.VALUE_OFFSET_LIMIT, cfg.valueOffsetY));
 
-        // 各方向的「附着深度」：同侧时先放条、再放文本，顺次排开
+        // ② 四个方向的「附着深度」：同侧时先放条、再放文本，顺次排开（LEFT/RIGHT 的深度含条长）。
         int above = 0;
         int below = 0;
         int left = 0;
@@ -125,6 +127,8 @@ public final class HudLayout {
         }
         overhang = Math.max(0, overhang);
 
+        // ③ 格子步距与整块尺寸：步距 = 格子 + 两侧深度 + 格间距 + 溢出余量；局部尺寸再由它推出，
+        // 屏幕尺寸只是局部尺寸乘上缩放后取整（此后所有夹取都在屏幕坐标里做）。
         pitchX = Metrics.CELL_W + left + right + Metrics.CELL_GAP + overhang * 2;
         pitchY = Metrics.CELL_H + above + below + Metrics.CELL_GAP;
         padLeft = Math.max(left, overhang);
@@ -137,6 +141,7 @@ public final class HudLayout {
         screenW = Math.round(localW * scale);
         screenH = Math.round(localH * scale);
 
+        // ④ 条与数值相对各自格子的偏移，最后把整块摆到屏幕上（只有这一步用到窗口尺寸）。
         computeOffsets();
         computeOrigin(cfg, viewW, viewH);
     }
@@ -177,7 +182,9 @@ public final class HudLayout {
         }
     }
 
+    /** 把整块 HUD 摆到屏幕上：先按锚点算基准位置，再做两段式夹取。 */
     private void computeOrigin(DuraHudConfig cfg, int sw, int sh) {
+        // ① 锚点基准坐标（不含用户偏移）：整块的「意图位置」。
         int x;
         int y;
         switch (cfg.anchor) {
@@ -216,16 +223,18 @@ public final class HudLayout {
                 y = sh - 42 - screenH;
             }
         }
-        // 收尾：把 HUD 拉回屏幕内。偏移量必须和锚点位置<b>一起</b>夹取 —— 分开夹的话，
-        // 一个很大的 offsetX（手改配置、换过分辨率）照样能把 HUD 推到屏幕外，而且编辑框
-        // 也画在屏外，连 H 编辑界面都救不回来。
-        // 这一步对锚点也是必要的：HOTBAR_LEFT / HOTBAR_RIGHT 把 HUD 的顶边对齐热键栏顶边
-        // （y = sh - 22），只要 HUD 比 22 高，底边就会掉到屏幕外 —— 默认「条与数值都在上方」
-        // 的高度就是 48。装得下时保证完整可见，装不下时对齐到左上角，绝不整块落到屏幕外。
-        // 两段式夹取。第一段只夹锚点自己：锚点表达的是「贴边 / 居中 / 对齐热键栏」这种意图，
-        // 装得下时仍旧完整可见（HOTBAR_LEFT 就是靠这一步把比热键栏高的整块顶上来）。
-        // 第二段才加上用户的偏移量，并且允许最多露出半个格子 —— 用户想把 HUD 稍微推过屏幕
-        // 边缘是可以的（见 README 6.6），但再往外就拦住：否则编辑框也跑到屏外，救不回来。
+        // ② 两段式夹取，把 HUD 拉回屏幕内。偏移量必须和锚点位置【一起】夹 —— 分开夹的话，
+        // 一个很大的 offsetX（手改配置、换过分辨率）照样能把 HUD 推到屏幕外，而且编辑框也
+        // 画在屏外，连 H 编辑界面都救不回来。
+        // 这一步对锚点本身也是必要的：HOTBAR_LEFT / HOTBAR_RIGHT 把 HUD 的顶边对齐热键栏顶边
+        // （y = sh - 22），只要 HUD 比 22 高，它的底边就会掉到屏幕外 —— 默认「条与数值都在
+        // 上方」的高度就是 48。
+        //
+        //   第一段只夹锚点自己（allow = 0）：锚点表达的是「贴边 / 居中 / 对齐热键栏」这种意图，
+        //   装得下时保证完整可见，装不下时对齐到左上角（HOTBAR_LEFT 就是靠这一步把比热键栏
+        //   更高的整块顶上来）。
+        //   第二段才加上用户的偏移量，并且允许每边最多露出半个格子 —— 用户想把 HUD 稍微推过
+        //   屏幕边缘是可以的（见 README 6.6），但再往外就拦住，否则编辑框跑到屏外救不回来。
         boolean custom = cfg.anchor == Anchor.CUSTOM;
         int baseX = custom ? 0 : clampOnScreen(x, screenW, sw, 0);
         int baseY = custom ? 0 : clampOnScreen(y, screenH, sh, 0);
@@ -266,58 +275,72 @@ public final class HudLayout {
     // 只读访问器
     // ------------------------------------------------------------------
 
+    /** HUD 左上角的屏幕 X（已含锚点、用户偏移与屏幕内夹取；单位是缩放后的逻辑像素）。 */
     public int originX() {
         return originX;
     }
 
+    /** 同 {@link #originX()}，纵向。 */
     public int originY() {
         return originY;
     }
 
+    /** 缩放系数，已夹在 0.25..4；非有限值或 ≤ 0 一律按 1（见 {@link #rebuild} 的防御性夹取）。 */
     public float scale() {
         return scale;
     }
 
+    /** 整块 HUD 的局部宽度（缩放前，含溢出余量）；对应屏幕宽度见 {@link #screenW()}。 */
     public int localW() {
         return localW;
     }
 
+    /** 整块 HUD 的局部高度（缩放前）。 */
     public int localH() {
         return localH;
     }
 
+    /** {@code localW * scale} 四舍五入后的屏幕宽度；夹取与 {@link #containsScreen} 都用它。 */
     public int screenW() {
         return screenW;
     }
 
+    /** {@code localH * scale} 四舍五入后的屏幕高度。 */
     public int screenH() {
         return screenH;
     }
 
+    /** 第 index 格左上角的局部 X：横向排列时按 {@link #pitchX()} 递增，纵向时所有格子相同。 */
     public int cellLocalX(int index) {
         return padLeft + (vertical ? 0 : index * pitchX);
     }
 
+    /** 第 index 格左上角的局部 Y：纵向排列时按 {@link #pitchY()} 递增，横向时所有格子相同。 */
     public int cellLocalY(int index) {
         return padTop + (vertical ? index * pitchY : 0);
     }
 
+    /** 耐久条长度（缩放前，由 {@link #resolveBarLength} 按配置解析并夹取）。 */
     public int barLength() {
         return barLength;
     }
 
+    /** 条相对格子左上角的横向偏移；可为负（条比格子宽，或贴在格子左侧）。 */
     public int barOffsetX() {
         return barOffsetX;
     }
 
+    /** 条相对格子左上角的纵向偏移；语义与单位同 {@link #barOffsetX()}。 */
     public int barOffsetY() {
         return barOffsetY;
     }
 
+    /** 这一帧有没有数值槽位（预留宽度为 0 时为 false，几何里根本没有文本的位置）。 */
     public boolean hasText() {
         return textSide != null;
     }
 
+    /** 数值槽位顶端相对格子左上角的局部 Y；第二行在它再加一个 {@link Metrics#TEXT_H} 的位置。 */
     public int textOffsetY() {
         return textOffsetY;
     }

@@ -84,6 +84,7 @@ public final class CellContent {
         this.labelValid = false;
     }
 
+    /** 这一份内容对应的物品栈；淡出替身留的是换物当时的副本（见 {@link #copyFrom}），不是原引用。 */
     public ItemStack stack() {
         return stack;
     }
@@ -114,10 +115,12 @@ public final class CellContent {
         return numeric;
     }
 
+    /** 这一帧的<b>真实</b>剩余耐久（加减动画期间不跟着变；要画数字请用 {@link #label} 的返回值）。 */
     public int remaining() {
         return remaining;
     }
 
+    /** 耐久上限；没有耐久上限的物品是 0，此时 {@link #hasNumeric()} 为 false。 */
     public int max() {
         return max;
     }
@@ -130,10 +133,13 @@ public final class CellContent {
      */
     public String label(DuraHudConfig cfg, TextRenderer font) {
         int key = fingerprint();
+        // 命中条件三选一：缓存有效、指纹没变、显示模式没变。三者都成立就整段跳过 —— 每帧唯一的
+        // 字符串分配（以及字形宽度查询）就发生在下面这个块里，因此它是热路径上最该守住的一段。
         if (!labelValid || key != labelKey || cfg.valueDisplay != labelDisplay) {
             labelDisplay = cfg.valueDisplay;
             labelKey = key;
             labelValid = true;
+            // 两行在同一次刷新里一起拼好、一起量宽：第二行只有 VALUE 模式非空，渲染层按需取用。
             label = CellLabel.text(cfg.valueDisplay, bar, numeric, displayRemaining(), max, displayPercent());
             labelWidth = label.isEmpty() ? 0 : font.getWidth(label);
             secondLabel = CellLabel.secondLine(cfg.valueDisplay, numeric, max);

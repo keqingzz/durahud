@@ -11,6 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 配置升级链的离线验证：只碰 {@link ConfigFile#migrate}，不需要 Minecraft 运行时。
  * 旧文件里的废弃键要被清掉、改名的键要保值、已经是当前版本的文件不能被改动。
+ *
+ * <p>守住的不变量：迁移只做「必要的改名 / 换算 / 清理」，缺的键一律留给 {@link ConfigFile#read} 的
+ * 「有才覆盖」补默认值 —— 不许凭空发明键，也不许让废弃键复活（§10.5）。失败意味着用户升级后设置
+ * 回退默认，或文件被改写成另一种东西；{@code migrate} 的返回值同时是「要不要回写磁盘」的信号，
+ * 报错就等于每次启动都白写一遍盘。</p>
  */
 class ConfigMigrationTest {
 
@@ -18,9 +23,14 @@ class ConfigMigrationTest {
         return JsonParser.parseString(json).getAsJsonObject();
     }
 
+    // ---------- 逐版本升级链（v0 → v2）：清废弃键、改名的键要保值 ----------
+
+    // 防回归：v0 文件里 barStyle / cellOpacity 必须消失，改名键 onlyDurableHand 的值要落到
+    // onlyDurableItems 上，barLength 一字不动。
     @Test
     void v0FileDropsRemovedKeysAndKeepsRenamedValue() {
-        JsonObject root = parse("{\"barStyle\":\"FLAT\",\"cellOpacity\":0.5,\"onlyDurableHand\":false,\"barLength\":90}");
+        JsonObject root = parse(
+                "{\"barStyle\":\"FLAT\",\"cellOpacity\":0.5,\"onlyDurableHand\":false,\"barLength\":90}");
         ConfigFile.migrate(root);
         assertEquals(ConfigFile.CONFIG_VERSION, root.get("configVersion").getAsInt());
         assertFalse(root.has("barStyle"));
@@ -30,6 +40,7 @@ class ConfigMigrationTest {
         assertEquals(90, root.get("barLength").getAsInt());
     }
 
+    // 防回归：只标了 configVersion 1 的文件也要完成改名 —— 升级链不许跳级漏段。
     @Test
     void v1FileRenamesOnlyDurableHand() {
         JsonObject root = parse("{\"configVersion\":1,\"onlyDurableHand\":false}");
@@ -39,6 +50,7 @@ class ConfigMigrationTest {
         assertFalse(root.get("onlyDurableItems").getAsBoolean());
     }
 
+    // 防回归：迁移不许发明新键（showWornNonDurable 留给 read 补默认），已有的值照旧保留。
     @Test
     void v2FileGainsNewOptionByDefault() {
         JsonObject root = parse("{\"configVersion\":2,\"onlyDurableItems\":true,\"barLength\":90}");
@@ -50,6 +62,9 @@ class ConfigMigrationTest {
         assertEquals(90, root.get("barLength").getAsInt());
     }
 
+    // ---------- 幂等与冲突：文件里的值比迁移逻辑新时不许覆盖 ----------
+
+    // 防回归：已经是当前版本 → migrate 原地不动，值一个都不许改写。
     @Test
     void currentFileIsLeftAlone() {
         JsonObject root = parse("{\"configVersion\":" + ConfigFile.CONFIG_VERSION
@@ -60,6 +75,7 @@ class ConfigMigrationTest {
         assertEquals(77, root.get("barLength").getAsInt());
     }
 
+    // 防回归：改名撞上「新键」已经存在时不许覆盖它 —— 旧值只能垫在没有新值的字段上。
     @Test
     void renameDoesNotOverwriteNewerValue() {
         JsonObject root = parse("{\"configVersion\":1,\"onlyDurableHand\":true,\"onlyDurableItems\":false}");
@@ -68,6 +84,9 @@ class ConfigMigrationTest {
         assertFalse(root.get("onlyDurableItems").getAsBoolean());
     }
 
+    // ---------- 逐版本升级链（v3 → v4）：新选项一律交给 read 的默认值 ----------
+
+    // 防回归：v3 文件升级时不许顺手写进 animateCells / animationMillis / valueDisplay。
     @Test
     void v3FileGainsAnimationOptionsByDefault() {
         JsonObject root = parse("{\"configVersion\":3,\"showItemIcons\":false,\"barLength\":90}");
@@ -82,6 +101,7 @@ class ConfigMigrationTest {
         assertFalse(root.has("valueDisplay"));
     }
 
+    // 防回归：v4 文件升级时不许发明 compactCells；showEmptySlots 的已有值要原样留着。
     @Test
     void v4FileGainsCompactionOptionByDefault() {
         JsonObject root = parse("{\"configVersion\":4,\"showEmptySlots\":false,\"barLength\":90}");
@@ -94,6 +114,10 @@ class ConfigMigrationTest {
         assertFalse(root.get("showEmptySlots").getAsBoolean());
     }
 
+    // ---------- v5 换算：四档枚举 → 毫秒、两个布尔 → 三态 ----------
+
+    // 防回归：SLOW→450、只开 showPercent→PERCENT、compactCells=false→showEmptySlots=true，
+    // 换算完四个旧键必须全部消失。
     @Test
     void v5FileConvertsFadeSpeedAndValueToggles() {
         JsonObject root = parse("{\"configVersion\":5,\"cellFadeSpeed\":\"SLOW\",\"showPercent\":true,"
@@ -113,6 +137,7 @@ class ConfigMigrationTest {
         assertEquals(90, root.get("barLength").getAsInt());
     }
 
+    // 防回归：两个布尔都开时取 VALUE（优先级写反就会把「剩余 / 上限」压成百分比）。
     @Test
     void v5FileWithBothValueTogglesPrefersValue() {
         JsonObject root = parse("{\"configVersion\":5,\"showPercent\":true,\"showValue\":true}");
@@ -120,15 +145,20 @@ class ConfigMigrationTest {
         assertEquals("VALUE", root.get("valueDisplay").getAsString());
     }
 
+    // 防回归：两个布尔都关时不许写 valueDisplay —— 缺键代表「用默认」，不是「已经关掉」。
     @Test
     void v5FileWithoutValueTogglesInventsNothing() {
-        JsonObject root = parse("{\"configVersion\":5,\"showPercent\":false,\"showValue\":false,\"cellFadeSpeed\":\"NORMAL\"}");
+        JsonObject root = parse(
+                "{\"configVersion\":5,\"showPercent\":false,\"showValue\":false,\"cellFadeSpeed\":\"NORMAL\"}");
         ConfigFile.migrate(root);
         assertEquals(200, root.get("animationMillis").getAsInt());
         assertFalse(root.has("valueDisplay"));
         assertFalse(root.has("cellFadeSpeed"));
     }
 
+    // ---------- 不发明新键、也不让废键复活 ----------
+
+    // 防回归（2.1.5）：缺 valueOffsetY 的老文件由 read 给 0（单行贴紧条），迁移只补版本号。
     @Test
     void v6FileGainsValueOffsetByDefaultWithoutInventingTheKey() {
         JsonObject root = parse("{\"configVersion\":6,\"valueDisplay\":\"PERCENT\",\"offsetY\":12}");
@@ -140,6 +170,7 @@ class ConfigMigrationTest {
         assertEquals(12, root.get("offsetY").getAsInt());
     }
 
+    // 防回归：只删不改名的旧键（onlyDamageable）不许被任何改名规则顺手复活。
     @Test
     void removedKeyIsNotRevivedByRename() {
         JsonObject root = parse("{\"onlyDamageable\":true,\"onlyDurableItems\":true}");
@@ -152,6 +183,9 @@ class ConfigMigrationTest {
      * 单个字段类型不符 / 是 {@code null} / 是对象时，只影响它自己：不许抛异常，
      * 也不许把整份配置冲成默认值（旧实现里一个 {@code "barLength":"90abc"} 就能做到这件事）。
      */
+    // ---------- 坏值容错：只影响自己那一个字段 ----------
+
+    // 防回归：类型不符 / null / 对象 / 数字当枚举，都只退回该字段的默认值，不许抛异常、不许整份回滚。
     @Test
     void brokenFieldTypesOnlyAffectThatField() {
         DuraHudConfig cfg = ConfigFile.read(ConfigFile.parse("""
@@ -177,6 +211,9 @@ class ConfigMigrationTest {
     }
 
     /** 26 个字段写出去再读回来必须逐字段一致：read 与 write 的键名对不上时这条立刻炸。 */
+    // ---------- 写读往返与废弃键 ----------
+
+    // 防回归：read 与 toJson 的键名对不上时，写出去再读回来就会丢字段（这份手写清单是第二道网）。
     @Test
     void everyFieldSurvivesAWriteReadRoundTrip() {
         DuraHudConfig cfg = new DuraHudConfig();
@@ -213,6 +250,7 @@ class ConfigMigrationTest {
     }
 
     /** 以前删掉的键（barStyle / compactCells / cellFadeSpeed 之类）留在文件里也不能让读盘失败。 */
+    // 防回归：早先删掉的键留在文件里也不许让读盘失败（用户手动改过的老配置很常见）。
     @Test
     void removedKeysAreIgnored() {
         DuraHudConfig cfg = ConfigFile.read(ConfigFile.parse("""
@@ -223,6 +261,9 @@ class ConfigMigrationTest {
     }
 
     /** sanitize 刻意不夹 offsetX/offsetY（编辑模式写的是屏幕上的绝对坐标），其余字段照旧夹取。 */
+    // ---------- sanitize 的取舍 ----------
+
+    // 防回归（§13.18）：offsetX / offsetY 是编辑模式写下的屏幕绝对坐标，夹一次就会「打开设置就跳回原位」。
     @Test
     void sanitizeKeepsTheAbsoluteOffsetsTheEditorWrote() {
         DuraHudConfig cfg = new DuraHudConfig();
@@ -246,6 +287,9 @@ class ConfigMigrationTest {
     }
 
     /** configVersion 缺失 / 写成字符串：一律当成版本 0，不抛异常，迁移后补回当前版本号。 */
+    // ---------- 版本号本身的容错与幂等 ----------
+
+    // 防回归：configVersion 缺失 / 写成字符串一律当 0，不许抛异常，迁移后要补回当前版本号。
     @Test
     void brokenVersionFieldIsTreatedAsVersionZero() {
         var missing = ConfigFile.parse("{\"offsetX\": 5}");
@@ -258,6 +302,7 @@ class ConfigMigrationTest {
     }
 
     /** 标着 v1..v5 的旧文件升级时也要清废弃键（旧实现只在 from < 1 时清，垃圾键会一路留着）。 */
+    // 防回归：旧实现只在 from < 1 时清废弃键，标着 v1..v5 的文件会把垃圾键一路带进新版本。
     @Test
     void olderVersionedFilesAlsoDropRemovedKeys() {
         JsonObject root = parse("{\"configVersion\":5,\"barStyle\":\"FLAT\",\"cellOpacity\":0.5,\"offsetY\":7}");
@@ -268,6 +313,7 @@ class ConfigMigrationTest {
     }
 
     /** 已经是当前版本：一个字都不改，返回值必须是 false（load 靠它决定回不回写磁盘）。 */
+    // 防回归：已经是当前版本时 migrate 必须报 false —— 返回值就是「要不要回写磁盘」。
     @Test
     void currentVersionFileIsLeftCompletelyAlone() {
         JsonObject root = parse("{\"configVersion\":" + ConfigFile.CONFIG_VERSION

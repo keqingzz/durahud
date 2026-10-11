@@ -15,12 +15,17 @@ import java.util.Locale;
  * <p>用 AWT 的 {@link FileDialog}：各平台上弹的就是系统自己的「打开 / 另存为」框（Windows 上是
  * 资源管理器那一套），不引第三方依赖、也不在游戏窗口里叠一层 Swing 界面。</p>
  *
- * <p>弹框会阻塞，所以整套调用<b>必须在工作线程里</b>跑（见 {@link DuraHudConfigScreen}）——
- * 在渲染线程上弹原生框会让游戏卡住甚至被判成无响应。无图形环境时 {@link #available()} 为
- * false，界面会退回 config 目录下的默认路径。</p>
+ * <p>{@code FileDialog.setVisible(true)} 是阻塞调用，所以整套调用<b>必须在工作线程里</b>跑
+ * （见 {@link DuraHudConfigScreen}）：在渲染线程上弹原生框会把游戏卡住甚至卡成无响应
+ * （见 README 13.19）。无图形环境时 {@link #available()} 为 false，界面会退回 config
+ * 目录下的默认路径，而不是把界面卡在那里。</p>
+ *
+ * <p>所有失败分支都返回 {@code null} 并记一条日志：用户在框里点了「取消」和弹框报错对
+ * 调用者而言是同一件事 —— 什么都不做。</p>
  */
 final class PresetDialogs {
 
+    /** 预设文件的扩展名：内容是 JSON，但要让人一眼看出是给人看 / 可手改的文本。 */
     private static final String SUFFIX = ".txt";
 
     private PresetDialogs() {
@@ -53,6 +58,10 @@ final class PresetDialogs {
         return open(directory, defaultName, title, FileDialog.LOAD);
     }
 
+    /**
+     * 真正弹框的地方：{@code SAVE} / {@code LOAD} 共用这一段，只有 mode 不同。
+     * 会阻塞到用户选完或取消，因此只在工作线程里被调到。
+     */
     private static Path open(File directory, String defaultName, String title, int mode) {
         Frame owner = null;
         try {

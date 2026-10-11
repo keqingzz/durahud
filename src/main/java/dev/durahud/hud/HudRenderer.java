@@ -43,6 +43,13 @@ public final class HudRenderer {
     private HudRenderer() {
     }
 
+    /**
+     * 帧回调（{@code HudRenderCallback}）的唯一入口，顺序即依赖：先推进状态、再算几何、最后画。
+     *
+     * <p>画的过程中不许再改条目状态，否则同一帧里「格子数」与「画出来的内容」会对不上
+     * （见 README 8.5）。每帧执行一次，整条链上不分配对象：几何走 {@link HudLayout} 的单例，
+     * 条目走静态的 {@link #ENTRIES}。</p>
+     */
     public static void render(DrawContext ctx, DuraHudConfig cfg) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (!shouldDraw(mc, cfg)) {
@@ -130,6 +137,7 @@ public final class HudRenderer {
      */
     private static void drawEntry(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg,
                                   HudLayout layout, DurabilityEntry entry) {
+        // ① 边框：alpha 与内容分开算 —— 盔甲格在「空槽位边框」开着时是常驻占位，边框一直实心。
         boolean visible = entry.visible(cfg);
         float alpha = FadeState.alpha(entry.fade(), cfg.animateCells);
         if (cfg.showSlotFrames && (visible || cfg.showEmptySlots)) {
@@ -142,8 +150,9 @@ public final class HudRenderer {
             popAlpha(ctx, frameAlpha);
         }
         if (!visible) {
-            return;
+            return;   // 没有内容、也不在淡出：边框画完就结束
         }
+        // ② 有内容：按有没有换物过渡分成两条绘制路径，两条都要自己把整格的不透明度包起来。
         // 格子的淡入淡出 × 换物过渡：两层不透明度相乘（没有过渡时后一项恒为 1）。
         SwapState swap = entry.swap();
         if (swap.active()) {
@@ -223,8 +232,15 @@ public final class HudRenderer {
      * @param dy 换物滑入的纵向位移
      * @param severity 这一份内容的耐久档位（调用者算一次，图标层与仪表层共用）
      */
+    /**
+     * 图标层：物品图标与濒危高亮框。
+     *
+     * <p>换物过渡的位移只作用在这一层（条与数字不动，见 README 13.22）；{@code dx/dy} 由调用方
+     * 给出，没有过渡时是 0。</p>
+     */
     private static void drawIconLayer(DrawContext ctx, DuraHudConfig cfg, CellContent content, int dx, int dy,
                                       Severity severity) {
+        // ① 图标；② 濒危高亮框。档位由调用方算好传进来，这里不再重判阈值（见 README 13.24）。
         if (cfg.showItemIcons) {
             ctx.drawItem(content.stack(), Metrics.ICON_X + dx, Metrics.ICON_Y + dy);
         }
@@ -246,6 +262,7 @@ public final class HudRenderer {
      */
     private static void drawGaugeLayer(DrawContext ctx, MinecraftClient mc, DuraHudConfig cfg,
                                        HudLayout layout, CellContent content, Severity severity) {
+        // ① 耐久条：长度取显示值（加减动画的中间量），颜色取真实值算出的档位。
         if (content.hasBar()) {
             drawBar(ctx, layout.barOffsetX(), layout.barOffsetY(), layout.barLength(),
                     content.displayRatio(), severity);
@@ -253,7 +270,7 @@ public final class HudRenderer {
         if (!layout.hasText()) {
             return;
         }
-        // 标签与字宽都由 CellContent 缓存：数字没变的帧既不拼字符串、也不量字形宽度。
+        // ② 数值：标签与字宽都由 CellContent 缓存，数字没变的帧既不拼字符串、也不量字形宽度。
         // VALUE 模式是两行（剩余 / 上限），两行在同一次 label(...) 里一起刷好，行距一行高。
         String label = content.label(cfg, mc.textRenderer);
         String second = content.secondLabel();

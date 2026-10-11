@@ -18,6 +18,10 @@ import net.minecraft.item.ItemStack;
  */
 final class ExtraSlots {
 
+    /**
+     * 只在类加载时问一次 {@code isModLoaded}：模组集合在进程生命周期里不会变，
+     * 而这个判断每 tick 都会走到（见 {@link #collect}），不该每次重新查。
+     */
     private static final boolean TRINKETS = FabricLoader.getInstance().isModLoaded("trinkets");
 
     private ExtraSlots() {
