@@ -1,5 +1,3 @@
-<!-- 仓库对外版 README 的源文件；发布时以 README.md 上传到仓库。 -->
-
 # DuraHUD
 
 
