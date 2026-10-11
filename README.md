@@ -55,7 +55,7 @@ Minecraft 1.20.1 · Fabric · 纯客户端 · MIT
 | barPlacement | 耐久条相对格子的方向：ABOVE / BELOW / LEFT / RIGHT | ABOVE |
 | valuePlacement | 数值方向：AUTO / ABOVE / BELOW / LEFT / RIGHT（AUTO = 自动放到条的对侧） | ABOVE |
 | barLength | 耐久条长度（像素）；0 = 自动（上下方 22、左右 60），上限 182 | 0 |
-| offsetX / offsetY | 相对锚点的偏移；CUSTOM 时是绝对坐标 | 0 |
+| offsetX / offsetY | 相对锚点的偏移；CUSTOM 时是绝对坐标（这时设置界面会把这两个滑条换成专用的位置控件，量程跟着屏幕边长走） | 0 |
 | scale | 整体缩放 0.25 - 4.0 | 1.0 |
 | showMainhand / showOffhand / showArmor | 分别显示主手 / 副手 / 盔甲四格 | true |
 | showTrinkets | 显示 Trinkets 已装备饰品的耐久（未安装 Trinkets 时无作用） | true |
@@ -74,6 +74,7 @@ Minecraft 1.20.1 · Fabric · 纯客户端 · MIT
 - 枚举以常量名写入文件；无法识别的取值只会让**那一个字段**回退到默认值，不会让整份配置失效。
 - 文件顶层的 configVersion 记录配置结构版本（当前 7）。读取时会依次执行迁移链（v0 -> v7），迁移是幂等的，只会改键的集合，不发明新键。
 - 只在「首次运行」「文件版本落后（走过迁移）」「导入预设」时写盘，启动时不会覆盖手改过的文件。
+- 配置文件读不出来时（JSON 被改坏、语法错误）会保留原文件不动：本次先进默认值、改动不落盘，设置界面顶部常驻红字提示；点「恢复默认」才会重写它（旧内容另存为 config/durahud.json.bak）。
 
 ## 从源码构建
 
@@ -81,7 +82,7 @@ Minecraft 1.20.1 · Fabric · 纯客户端 · MIT
 
 ```bash
 gradle build     # 产物：build/libs/durahud-<version>.jar
-gradle test      # 单元测试（82 个用例，纯 JVM，不需要启动游戏）
+gradle test      # 单元测试（93 个用例，纯 JVM，不需要启动游戏）
 ```
 
 几何层与配置层刻意不依赖 Minecraft 的类型，所以布局计算、配置迁移、动画曲线这些逻辑都能脱离游戏跑单元测试（见 src/test/java）。

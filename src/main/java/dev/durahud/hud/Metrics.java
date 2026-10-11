@@ -92,4 +92,18 @@ public final class Metrics {
     public static final int BAR_MIN = 8;
     /** 贴边锚点与屏幕边缘的距离，同时也是把 HUD 拉回屏幕内时的最小留白。 */
     public static final int SCREEN_MARGIN = 4;
+
+    /** 原版热键栏宽 182 的一半：贴左右两侧的锚点从屏幕中线往外让这么多才开始放 HUD。 */
+    public static final int HOTBAR_HALF_W = 91;
+    /** 原版热键栏高：贴左右两侧时 HUD 的顶边与热键栏顶边齐平（{@code y = sh - HOTBAR_H}）。 */
+    public static final int HOTBAR_H = 22;
+    /** HUD 与热键栏之间的横向空隙，只在 {@code HOTBAR_LEFT} / {@code HOTBAR_RIGHT} 用到。 */
+    public static final int HOTBAR_SIDE_GAP = 4;
+    /**
+     * {@code HOTBAR_ABOVE} 锚点时 HUD 底边与热键栏顶边之间的距离。
+     *
+     * <p>比 {@link #HOTBAR_SIDE_GAP} 大得多是有意的：热键栏正上方是原版画手持物品名等提示的
+     * 地方，压上去会被挡住（合计距屏幕底 {@code HOTBAR_H + HOTBAR_ABOVE_GAP}）。</p>
+     */
+    public static final int HOTBAR_ABOVE_GAP = 20;
 }

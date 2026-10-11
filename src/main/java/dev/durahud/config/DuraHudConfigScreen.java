@@ -168,11 +168,25 @@ public class DuraHudConfigScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
-        if (dirty) {
-            cfg.sanitize();
-            cfg.save();
-            dirty = false;
+        flush();
+    }
+
+    /**
+     * 统一落盘：用户真改过（{@link #dirty}）或这次读盘本来就欠一次回写
+     * （{@link ConfigFile#shouldWriteBack()}：首次运行、刚升级过格式）才写。
+     *
+     * <p>{@link #removed()}（切界面 / ESC）与 {@link #close()}（点「完成」）共用它。以前
+     * {@code close()} 里是无条件 {@code cfg.save()}，等于没动过也把文件重写一遍；更要紧的是配置
+     * 读坏时会把内存里的默认值盖到用户手改的文件上 —— 现在 {@link ConfigFile#save} 自己会拒绝，
+     * 界面另在 {@link #render} 里常驻一条红字说明（2.1.7）。</p>
+     */
+    private void flush() {
+        cfg.sanitize();
+        if (!dirty && !ConfigFile.shouldWriteBack()) {
+            return;   // 没动过、也不欠回写：磁盘上就是这份内容，别去碰它
         }
+        cfg.save();
+        dirty = false;
     }
 
     // ------------------------------------------------------------------
@@ -215,20 +229,51 @@ public class DuraHudConfigScreen extends Screen {
                 "durahud.tip.showEmptySlots");
     }
 
-    /** 布局页：停靠方向、排列方向、缩放、偏移与条长。 */
+    /** 非 {@code CUSTOM} 锚点时位置滑条的固定半程：±200 像素，够推出手感范围又不牺牲精度。 */
+    private static final double OFFSET_SPAN = 200.0D;
+
+    /**
+     * 布局页：停靠方向、排列方向、缩放、位置与条长。
+     *
+     * <p>后两个滑条的含义<b>取决于锚点</b>：非 {@code CUSTOM} 时它们是「相对锚点的偏移」，
+     * {@code CUSTOM} 时 {@code offsetX/offsetY} 本身就是屏幕绝对坐标（见
+     * {@code HudLayout#computeOrigin}）。所以 CUSTOM 下换一套标签与提示，量程也跟着屏幕走 ——
+     * 固定 ±200 的老写法让「滑条显示 200、配置里却存着 521」这种状态出现，只要碰一下滑条，
+     * 拖出来的位置就被夹回 200（README 13.37）。换锚点后重建整页见上面的 {@code cycle} 重载。</p>
+     */
     private void buildLayoutPage() {
         cycle("durahud.option.anchor", "durahud.anchor", DuraHudConfig.Anchor.values(), cfg.anchor,
-                v -> cfg.anchor = v);
+                v -> cfg.anchor = v, this::clearAndInit);
         cycle("durahud.option.orientation", "durahud.option.orientation",
                 DuraHudConfig.Orientation.values(), cfg.orientation, v -> cfg.orientation = v);
         slider("durahud.option.scale", 0.5D, 3.0D, cfg.scale, false, false,
                 v -> cfg.scale = (float) v, null);
-        slider("durahud.option.offsetX", -200.0D, 200.0D, cfg.offsetX, true, false,
-                v -> cfg.offsetX = (int) v, null);
-        slider("durahud.option.offsetY", -200.0D, 200.0D, cfg.offsetY, true, false,
-                v -> cfg.offsetY = (int) v, null);
+        boolean custom = cfg.anchor == DuraHudConfig.Anchor.CUSTOM;
+        slider(custom ? "durahud.option.positionX" : "durahud.option.offsetX",
+                positionMin(custom, cfg.offsetX), positionMax(custom, cfg.offsetX, this.width),
+                cfg.offsetX, true, false, v -> cfg.offsetX = (int) v,
+                custom ? "durahud.tip.positionX" : null);
+        slider(custom ? "durahud.option.positionY" : "durahud.option.offsetY",
+                positionMin(custom, cfg.offsetY), positionMax(custom, cfg.offsetY, this.height),
+                cfg.offsetY, true, false, v -> cfg.offsetY = (int) v,
+                custom ? "durahud.tip.positionY" : null);
         slider("durahud.option.barLength", 0.0D, 182.0D, cfg.barLength, true, true,
                 v -> cfg.barLength = (int) v, null);
+    }
+
+    /**
+     * 位置滑条的下界。
+     *
+     * <p>常规锚点给 {@link #OFFSET_SPAN} 的手感量程，{@code CUSTOM} 时屏幕坐标从 0 起算；两种
+     * 情况都必须<b>包住当前值</b> —— 手改过配置的大值得先能显示出来，滑条才不会一碰就把它夹掉。</p>
+     */
+    private static double positionMin(boolean custom, int value) {
+        return custom ? Math.min(0.0D, value) : Math.min(-OFFSET_SPAN, value);
+    }
+
+    /** 位置滑条的上界，理由同 {@link #positionMin}：{@code CUSTOM} 时的上界是屏幕边长。 */
+    private static double positionMax(boolean custom, int value, int screen) {
+        return custom ? Math.max(screen, value) : Math.max(OFFSET_SPAN, value);
     }
 
     /** 外观页：条与数值放哪、数值显示成什么、格子与图标的装饰。 */
@@ -305,6 +350,19 @@ public class DuraHudConfigScreen extends Screen {
     /** 登记一个枚举循环行：点一下切到下一个取值（到头绕回第一个），文字走 {@link #enumLabel}。 */
     private <T extends Enum<T>> void cycle(String labelKey, String valuePrefix, T[] values, T current,
                                            Consumer<T> setter) {
+        cycle(labelKey, valuePrefix, values, current, setter, null);
+    }
+
+    /**
+     * 同上，另外支持「取值一变、这一页的别的控件就得重建」的行：{@code afterChange} 在取值换好、
+     * 标脏之后跑。
+     *
+     * <p>目前只有停靠位置（anchor）用它：换成 {@code CUSTOM} 前后，下面两个位置滑条的标签、量程
+     * 与提示各不相同（见 {@link #buildLayoutPage()}），必须整页重建才配得上。控件回调里重建界面
+     * 在本工程是既有做法（见 {@link #addTabs()}）。</p>
+     */
+    private <T extends Enum<T>> void cycle(String labelKey, String valuePrefix, T[] values, T current,
+                                           Consumer<T> setter, Runnable afterChange) {
         options.add((x, y, width, height) -> {
             int[] index = { current.ordinal() };
             ButtonWidget widget = ButtonWidget.builder(enumLabel(labelKey, valuePrefix, values[index[0]]), button -> {
@@ -313,6 +371,9 @@ public class DuraHudConfigScreen extends Screen {
                 setter.accept(next);
                 markDirty();
                 button.setMessage(enumLabel(labelKey, valuePrefix, next));
+                if (afterChange != null) {
+                    afterChange.run();
+                }
             }).dimensions(x, y, width, height).build();
             return widget;
         });
@@ -369,7 +430,11 @@ public class DuraHudConfigScreen extends Screen {
         addDrawableChild(ButtonWidget
                 .builder(Text.translatable("durahud.button.reset"), button -> {
                     cfg.resetToDefaults();
-                    cfg.save();
+                    // 用户明确要求「恢复默认」：配置读坏时也要照写（这是唯一的重置出口），
+                    // 写成功才算落盘，失败时状态行留着原来的内容让人再试一次。
+                    if (ConfigFile.saveForced(cfg)) {
+                        dirty = false;
+                    }
                     this.clearAndInit();
                 })
                 .dimensions(layout.buttonX(0), layout.buttonY, layout.buttonW, ScreenLayout.BUTTON_H).build());
@@ -481,7 +546,13 @@ public class DuraHudConfigScreen extends Screen {
             return;
         }
         cfg.copyFrom(imported);
-        cfg.save();
+        // 导入是用户明确要求「就用这份配置」，所以走 saveForced：配置读坏时它同样是自救出口。
+        // 写不进去（磁盘满 / 无权限）就如实报失败，别只显示「已导入」。
+        if (!ConfigFile.saveForced(cfg)) {
+            this.status = Text.translatable("durahud.preset.failed", name);
+            return;
+        }
+        dirty = false;
         this.status = Text.translatable("durahud.preset.imported", name);
         if (MinecraftClient.getInstance().currentScreen == this) {
             this.clearAndInit();
@@ -512,16 +583,23 @@ public class DuraHudConfigScreen extends Screen {
         // 竖排标签用左侧的一条高亮竖线标出当前页（标签文字本身再加粗，见 addTabs）。
         ctx.fill(layout.tabX() - 2, layout.tabY(active), layout.tabX(),
                 layout.tabY(active) + layout.tabH, 0xFF6FE3FF);
+        if (ConfigFile.loadFailed()) {
+            // 常驻警告：磁盘上那份配置读不了、内存里是默认值 —— 也就是「这次的改动不会保存」。
+            // 画在状态行正上方（12px 正好落在内容区与状态行之间的空档里，见 ScreenLayout）。
+            ctx.drawCenteredTextWithShadow(this.textRenderer,
+                    Text.translatable("durahud.status.configBroken"), this.width / 2,
+                    layout.statusY - 12, 0xFFFF7070);
+        }
         if (this.status != null) {
             ctx.drawCenteredTextWithShadow(this.textRenderer, this.status, this.width / 2,
                     layout.statusY, 0xFFF0F0F0);
         }
     }
 
-    /** 关屏：先落盘再切回父界面；{@link #removed()} 只在真的改过时才写，这里保证一定写一次。 */
+    /** 关屏：先落盘再切回父界面（与 {@link #removed()} 共用 {@link #flush()}，重复调用也没事）。 */
     @Override
     public void close() {
-        cfg.save();
+        flush();
         if (this.client != null) {
             this.client.setScreen(this.parent);
         }

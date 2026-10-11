@@ -26,6 +26,8 @@
   "durahud.option.scale": "Scale",
   "durahud.option.offsetX": "X Offset",
   "durahud.option.offsetY": "Y Offset",
+  "durahud.option.positionX": "X position (custom)",
+  "durahud.option.positionY": "Y position (custom)",
   "durahud.option.barLength": "Bar length",
   "durahud.value.auto": "Auto",
   "durahud.option.barPlacement": "Bar position",
@@ -65,6 +67,8 @@
   "durahud.tip.showEmptySlots": "When off, empty armor slots stop taking space and the slots after them slide in (animated).",
   "durahud.tip.animationMillis": "Duration of fading and sliding: 50 ms is almost instant, 1000 ms is the slowest.",
   "durahud.tip.valueOffsetY": "Nudges just the numbers up or down (pixels before scaling, positive is down); slots, bar and block size stay put.",
+  "durahud.tip.positionX": "Custom anchor: absolute screen X in GUI pixels (0 = left edge); edit-mode dragging writes the same value.",
+  "durahud.tip.positionY": "Custom anchor: absolute screen Y in GUI pixels (0 = top edge); edit-mode dragging writes the same value.",
   "durahud.button.done": "Done",
   "durahud.button.reset": "Reset to defaults",
   "durahud.button.export": "Export preset",
@@ -73,5 +77,6 @@
   "durahud.preset.imported": "Preset imported: %s",
   "durahud.preset.failed": "Preset operation failed (%s), see the game log",
   "durahud.preset.choosing": "Choose a file in the dialog…",
-  "durahud.preset.cancelled": "Cancelled"
+  "durahud.preset.cancelled": "Cancelled",
+  "durahud.status.configBroken": "Config unreadable: original kept, changes not saved. Fix or delete config/durahud.json, or press Reset to defaults."
 }

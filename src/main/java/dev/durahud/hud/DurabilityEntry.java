@@ -324,16 +324,14 @@ public final class DurabilityEntry {
         return armor || kind == null;
     }
 
-    /** 有耐久度（可损坏）或物品自带小耐久条。包内可见：只有 {@link CellContent} 的快照要用。 */
     // ------------------------------------------------------------------
     // 读数：真实耐久。配色、濒危与满耐久判定都用这里的数；条长与数字是显示值，在 CellContent
+    // 判定本身全在 {@link Wear}（纯函数，单测能离线跑）；这里只负责把 ItemStack 上的数读出来。
     // ------------------------------------------------------------------
 
+    /** 有耐久度（可损坏）或物品自带小耐久条。包内可见：只有 {@link CellContent} 的快照要用。 */
     boolean hasWear() {
-        if (isEmpty()) {
-            return false;
-        }
-        return stack.getMaxDamage() > 0 || stack.isItemBarVisible();
+        return !isEmpty() && Wear.hasWear(stack.getMaxDamage(), stack.isItemBarVisible());
     }
 
     /** 耐久上限；不可损坏的物品是 0（此时只能退回物品自带小条，见 {@link #ratio()}）。 */
@@ -351,24 +349,19 @@ public final class DurabilityEntry {
         return max() > 0;
     }
 
-    /** 0..1 的剩余比例；没有耐久上限时退回物品自带小条（13 步）。 */
+    /** 0..1 的剩余比例；没有耐久上限时退回物品自带小条（{@link Wear#ITEM_BAR_STEPS} 步）。 */
     float ratio() {
-        int max = max();
-        if (max > 0) {
-            return clamp((float) (max - stack.getDamage()) / (float) max);
-        }
-        if (stack.isItemBarVisible()) {
-            return clamp(stack.getItemBarStep() / 13.0F);
-        }
-        return 1.0F;
+        return Wear.ratio(max(), stack.getDamage(), stack.isItemBarVisible(), stack.getItemBarStep());
     }
 
+    /**
+     * 算不算「满」（{@code hideFull} 要用）。
+     *
+     * <p>口径与 {@link #ratio()} <b>同源</b>，两个判断都问 {@link Wear}：以前这里是
+     * {@code max <= 0 || damage <= 0}，只有小条的工具（上限 0）一律被判成满的，开着 hideFull
+     * 时它整格消失，可条上还有一半 —— 2.1.7 修的就是这条回归（见 README 13.36）。</p>
+     */
     boolean isFull() {
-        int max = max();
-        return max <= 0 || stack.getDamage() <= 0;
-    }
-
-    private static float clamp(float value) {
-        return Math.max(0.0F, Math.min(1.0F, value));
+        return Wear.isFull(max(), stack.getDamage(), stack.isItemBarVisible(), stack.getItemBarStep());
     }
 }

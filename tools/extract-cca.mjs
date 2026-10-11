@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url';
 const PROJECT_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // 默认指向本整合包里唯一那份 trinkets jar：取值方式不要改（README 2.5），modCompileOnly 就靠它。
 // 折成两行只是为了不超过 120 列，path.join 的实参序列没变。
-const DEFAULT_JAR = process.env.TRINKETS_JAR || path.join(PROJECT_DIR, '..', 'libs', 'trinkets-3.7.2.jar');
+const DEFAULT_JAR = process.env.TRINKETS_JAR
+  || path.join(PROJECT_DIR, '..', 'libs', 'trinkets-3.7.2.jar');
 // 输出刻意放在工程之外：抽出来的库是编译期临时依赖，不属于源码仓库，重建时整个 durahud-build 删掉即可。
 const DEFAULT_OUT = path.join(PROJECT_DIR, '..', 'durahud-build', 'libs');
 

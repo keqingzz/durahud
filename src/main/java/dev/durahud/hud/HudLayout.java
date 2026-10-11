@@ -182,6 +182,11 @@ public final class HudLayout {
         }
     }
 
+    /** 「热键栏正上方」的基准 y：整块底边距热键栏顶边 {@link Metrics#HOTBAR_ABOVE_GAP}。 */
+    private static int aboveHotbarY(int sh, int screenH) {
+        return sh - Metrics.HOTBAR_H - Metrics.HOTBAR_ABOVE_GAP - screenH;
+    }
+
     /** 把整块 HUD 摆到屏幕上：先按锚点算基准位置，再做两段式夹取。 */
     private void computeOrigin(DuraHudConfig cfg, int sw, int sh) {
         // ① 锚点基准坐标（不含用户偏移）：整块的「意图位置」。
@@ -189,12 +194,12 @@ public final class HudLayout {
         int y;
         switch (cfg.anchor) {
             case HOTBAR_LEFT -> {
-                x = sw / 2 - 91 - 4 - screenW;
-                y = sh - 22;
+                x = sw / 2 - Metrics.HOTBAR_HALF_W - Metrics.HOTBAR_SIDE_GAP - screenW;
+                y = sh - Metrics.HOTBAR_H;
             }
             case HOTBAR_RIGHT -> {
-                x = sw / 2 + 91 + 4;
-                y = sh - 22;
+                x = sw / 2 + Metrics.HOTBAR_HALF_W + Metrics.HOTBAR_SIDE_GAP;
+                y = sh - Metrics.HOTBAR_H;
             }
             case TOP_LEFT -> {
                 x = Metrics.SCREEN_MARGIN;
@@ -218,9 +223,17 @@ public final class HudLayout {
                 x = 0;
                 y = 0;
             }
-            default -> {
+            case HOTBAR_ABOVE -> {
+                // 贴在热键栏正上方：底边与热键栏顶边之间留 HOTBAR_ABOVE_GAP，让原版在热键栏
+                // 上方画的手持物品名不会压在 HUD 上（见 Metrics#HOTBAR_ABOVE_GAP）。
                 x = sw / 2 - screenW / 2;
-                y = sh - 42 - screenH;
+                y = aboveHotbarY(sh, screenH);
+            }
+            default -> {
+                // 只有将来给 Anchor 加了新取值、又忘了写 case 才会落到这里：按「热键栏正上方」
+                // 摆。位置可能不是想要的，但不会崩，也不会让下面两段夹取拿到没赋值的坐标。
+                x = sw / 2 - screenW / 2;
+                y = aboveHotbarY(sh, screenH);
             }
         }
         // ② 两段式夹取，把 HUD 拉回屏幕内。偏移量必须和锚点位置【一起】夹 —— 分开夹的话，

@@ -15,8 +15,10 @@ import dev.durahud.config.DuraHudConfig.ValuePlacement;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 /**
  * config/durahud.json 的读写。字段清单只有这里一处，模型类保持纯数据。
@@ -31,6 +33,10 @@ import java.nio.file.Path;
  * → {@link #read(JsonObject)} 逐字段还原 → {@link DuraHudConfig#sanitize()} 夹取。写入则走
  * {@link #save(DuraHudConfig)} / {@link #exportTo(java.nio.file.Path, DuraHudConfig)}，
  * 两条路都用 {@link #toJson(DuraHudConfig)}，所以导出与主配置的字段永远一致。</p>
+ *
+ * <p>写盘有两道护栏：主配置先写同目录的 {@code .tmp} 再原子替换过去（中途崩掉不会留下半截
+ * JSON），并先把旧文件留成 {@code .bak}；上次读失败时 {@link #save(DuraHudConfig)} 拒绝覆盖
+ * 原文件，只有用户显式点「恢复默认」（{@link #saveForced(DuraHudConfig)}）才照写。</p>
  *
  * <p><b>加字段要改的地方</b>：{@link #read(JsonObject)} 与 {@code DuraHudConfig.copyFrom} /
  * {@code resetToDefaults}，再给 {@link #CONFIG_VERSION} +1、在 {@link #migrate(JsonObject)}
@@ -56,9 +62,21 @@ public final class ConfigFile {
      */
     private static boolean writeBack;
 
+    /**
+     * 上一次读盘是不是读到了一份坏文件（存在但解析不了）。为真时内存里是<b>默认值</b>，
+     * 而磁盘上那份是用户手改的记录：{@link #save(DuraHudConfig)} 会拒绝写，界面弹警告
+     * （见 {@link #loadFrom(Path)} 与 {@link #saveTo(Path, DuraHudConfig, boolean)}）。
+     */
+    private static boolean loadFailed;
+
     /** 上一次 load() 是否需要把内存里的配置写回磁盘（见 {@link #writeBack}）。 */
     public static boolean shouldWriteBack() {
         return writeBack;
+    }
+
+    /** 上一次 load() 是不是读失败了（见 {@link #loadFailed}）；界面据此弹常驻警告。 */
+    public static boolean loadFailed() {
+        return loadFailed;
     }
 
     /** 已废弃的键。升级时顺手删掉，旧文件不会一直带着垃圾。 */
@@ -87,7 +105,18 @@ public final class ConfigFile {
      * 同时决定 {@link #shouldWriteBack()}：只有「首次运行」与「这次真的升级过」才会回写。
      */
     public static DuraHudConfig load() {
-        Path path = path();
+        return loadFrom(path());
+    }
+
+    /**
+     * 从指定文件读一份配置。包内可见：让单测用临时目录直接覆盖「缺文件 / 升级 / 坏文件」三条路
+     * （{@link #path()} 依赖 FabricLoader，离线跑不了）。
+     *
+     * <p>读失败时把 {@link #loadFailed} 置位、{@link #writeBack} 清掉：磁盘上那份坏文件是用户
+     * 手改过的唯一记录，绝不能被内存里的默认值盖掉。</p>
+     */
+    static DuraHudConfig loadFrom(Path path) {
+        loadFailed = false;
         if (!Files.exists(path)) {
             writeBack = true;   // 首次运行：把默认值落成文件，用户才有东西可改
             return new DuraHudConfig();
@@ -103,14 +132,50 @@ public final class ConfigFile {
             // 文件连 JSON 都不是（语法坏了、顶层不是对象）。刻意<b>不</b>回写：默认值覆盖上去
             // 就把用户手改过的设置永久毁了 —— 保留原文件，让人能自己看一眼、修一修或删掉。
             writeBack = false;
+            loadFailed = true;
             DuraHudClient.LOGGER.warn("[DuraHUD] 配置文件读取失败，本次先用默认值，原文件保持不动：{}", e.toString());
             return new DuraHudConfig();
         }
     }
 
-    /** 把整份配置写回 config/durahud.json（UTF-8，父目录不存在就先建）。 */
-    public static void save(DuraHudConfig cfg) {
-        write(path(), cfg, "配置");
+    /**
+     * 把整份配置写回 config/durahud.json（UTF-8，父目录不存在就先建）。
+     *
+     * <p>读失败过（{@link #loadFailed()}）时<b>拒绝写</b>并返回 false：内存里那份是默认值，
+     * 写下去就把用户手改坏的文件换成默认值了（见 {@link #saveTo}）。</p>
+     */
+    public static boolean save(DuraHudConfig cfg) {
+        return saveTo(path(), cfg, false);
+    }
+
+    /**
+     * 照写不误，覆盖前先留一份 {@code .bak}。只给「恢复默认」按钮用：那正是「把这份文件重写成
+     * 默认值」的明确意图，也是配置读坏之后唯一的自救出口。
+     */
+    public static boolean saveForced(DuraHudConfig cfg) {
+        return saveTo(path(), cfg, true);
+    }
+
+    /**
+     * 主配置写盘的唯一入口。包内可见，理由同 {@link #loadFrom(Path)}。
+     *
+     * <p>两道护栏：① {@link #loadFailed()} 为真且 {@code force} 为假时不写 —— 磁盘上那份坏文件
+     * 是用户唯一的手改记录，先留着让他自己修或删；② 写成功后把 {@link #writeBack} 与
+     * {@link #loadFailed} 一起清掉 —— 刚落盘的这份就是磁盘现状，不需要再回写，也不该继续
+     * 报「读失败」。</p>
+     */
+    static boolean saveTo(Path path, DuraHudConfig cfg, boolean force) {
+        if (loadFailed && !force) {
+            DuraHudClient.LOGGER.warn("[DuraHUD] 上次读取配置失败，这次不覆盖原文件；"
+                    + "改好或删掉 config/durahud.json，或点「恢复默认」重写它。");
+            return false;
+        }
+        if (!write(path, cfg, "配置", true)) {
+            return false;
+        }
+        writeBack = false;
+        loadFailed = false;
+        return true;
     }
 
     /** 默认预设文件名（界面拿它当原生「另存为」框里的初始名字）。 */
@@ -135,7 +200,7 @@ public final class ConfigFile {
      * 也不至于被误当成模组自己的配置文件。</p>
      */
     public static boolean exportTo(Path path, DuraHudConfig cfg) {
-        return path != null && write(path, cfg, "预设");
+        return path != null && write(path, cfg, "预设", false);
     }
 
     /** 从指定文件读一份配置（原生「打开」框选出来的路径）；不存在或格式有问题时返回 null。 */
@@ -158,18 +223,45 @@ public final class ConfigFile {
     /**
      * 实际写盘的唯一入口，主配置与预设共用；返回是否成功，失败只记日志不抛。
      * {@code what} 只用于日志（「配置」/「预设」），父目录为空时不建目录 —— 直接写当前目录。
+     *
+     * <p>先写同目录的 {@code <文件名>.tmp}，再 {@link Files#move} 过去：直接覆盖写的中途崩掉会
+     * 留下一份半截 JSON，下次启动整份配置就退回默认值。同分区时要求原子替换；文件系统不支持
+     * （{@code AtomicMoveNotSupportedException}）就退回普通替换 —— 至少内容已经写全了。</p>
+     *
+     * <p>{@code backup} 只有主配置为 true：写之前把旧文件复制成 {@code .bak}，手改坏了还能捞
+     * 回来。预设是用户自己挑的文件，旁边多一个 .bak 只会碍事。</p>
      */
-    private static boolean write(Path path, DuraHudConfig cfg, String what) {
+    private static boolean write(Path path, DuraHudConfig cfg, String what, boolean backup) {
+        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Path parent = path.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.writeString(path, GSON.toJson(toJson(cfg)), StandardCharsets.UTF_8);
+            if (backup && Files.exists(path)) {
+                Files.copy(path, path.resolveSibling(path.getFileName() + ".bak"),
+                        StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(tmp, GSON.toJson(toJson(cfg)), StandardCharsets.UTF_8);
+            try {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+            }
             return true;
         } catch (Exception e) {
             DuraHudClient.LOGGER.warn("[DuraHUD] {} 写入失败：{}", what, e.toString());
+            deleteQuietly(tmp);
             return false;
+        }
+    }
+
+    /** 写失败后清掉可能留下的半截临时文件；删不掉也不影响主流程，只是碍眼。 */
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (Exception ignored) {
+            // 清理失败无所谓
         }
     }
 

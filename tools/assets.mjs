@@ -13,18 +13,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-// 默认取当前工作目录下的 .minecraft；换机器/换整合包时用环境变量 MINECRAFT_DIR、MINECRAFT_VERSION_ID 覆盖（README 11.7 第 3 条）。
-// 版本目录名里带空格（'1.20.1-Fabric 0.17.3'），整串硬编码容易少一个空格而报「找不到文件」。
-export const MINECRAFT_DIR = process.env.MINECRAFT_DIR || path.resolve(process.cwd(), '.minecraft');
-export const VERSION_ID = process.env.MINECRAFT_VERSION_ID || '1.20.1-Fabric 0.17.3';
-export const VERSION_DIR = path.join(MINECRAFT_DIR, 'versions', VERSION_ID);
+// 路径由环境变量给出（MINECRAFT_DIR / MINECRAFT_VERSION_ID）。VERSION_DIR 用 path.join 拼而不是写整串：
+// 版本目录名里带空格，整串硬编码容易少一个空格而报「找不到文件」。
+export const MINECRAFT_DIR = process.env.MINECRAFT_DIR;
+export const VERSION_DIR = path.join(MINECRAFT_DIR, 'versions', process.env.MINECRAFT_VERSION_ID);
 
 /**
  * 读 asset index。必须经版本 json 的 assetIndex.id 绕一次：索引文件名不一定等于版本名
  * （官方版本里两者常常不同），直接拼 '1.20.1.json' 迟早会踩空。
  */
 function assetIndex() {
-  const versionJson = JSON.parse(fs.readFileSync(path.join(VERSION_DIR, VERSION_ID + '.json'), 'utf8'));
+  const versionJson = JSON.parse(fs.readFileSync(path.join(VERSION_DIR, process.env.MINECRAFT_VERSION_ID + '.json'), 'utf8'));
   const id = versionJson.assetIndex.id;   // 索引 id 才是 assets/indexes/<id>.json 的文件名
   return JSON.parse(fs.readFileSync(path.join(MINECRAFT_DIR, 'assets', 'indexes', id + '.json'), 'utf8'));
 }
@@ -67,7 +66,7 @@ function openZip(file) {
   };
 }
 
-// 资源包可能放在两处：版本目录下的（整合包默认）与全局 .minecraft 下的。
+// 资源包可能放在两处：版本目录下的（启动器整合包默认）与全局 .minecraft 下的。
 // 两处都扫，顺序不代表优先级 —— 谁先命中取决于「哪个包里真的有这个文件」，与游戏内一致。
 function resourcepackDirs() {
   return [path.join(VERSION_DIR, 'resourcepacks'), path.join(MINECRAFT_DIR, 'resourcepacks')]

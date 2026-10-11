@@ -26,6 +26,8 @@
   "durahud.option.scale": "缩放",
   "durahud.option.offsetX": "X 偏移",
   "durahud.option.offsetY": "Y 偏移",
+  "durahud.option.positionX": "X 坐标（自定义）",
+  "durahud.option.positionY": "Y 坐标（自定义）",
   "durahud.option.barLength": "耐久条长度",
   "durahud.value.auto": "自动",
   "durahud.option.barPlacement": "耐久条位置",
@@ -65,6 +67,8 @@
   "durahud.tip.showEmptySlots": "关掉后空着的盔甲格不再占位，后面的格子自动补位（带过渡动画）。",
   "durahud.tip.animationMillis": "淡入淡出与平滑移动的时长：50 毫秒几乎瞬间到位，1000 毫秒最慢。",
   "durahud.tip.valueOffsetY": "只让数字上下微调（缩放前的像素，正数向下）：格子、耐久条与整块尺寸都不动。",
+  "durahud.tip.positionX": "自定义停靠时这是屏幕绝对 X 坐标（GUI 像素，0 = 左边缘），编辑模式拖动写的就是它。",
+  "durahud.tip.positionY": "自定义停靠时这是屏幕绝对 Y 坐标（GUI 像素，0 = 上边缘），编辑模式拖动写的就是它。",
   "durahud.button.done": "完成",
   "durahud.button.reset": "恢复默认",
   "durahud.button.export": "导出预设",
@@ -73,5 +77,6 @@
   "durahud.preset.imported": "预设已导入：%s",
   "durahud.preset.failed": "预设操作失败（%s），详情见游戏日志",
   "durahud.preset.choosing": "请在弹出的窗口里选择文件…",
-  "durahud.preset.cancelled": "已取消"
+  "durahud.preset.cancelled": "已取消",
+  "durahud.status.configBroken": "配置读取失败：原文件已保留，本次改动不会保存。请修好或删掉 config/durahud.json，或点「恢复默认」重写它。"
 }
