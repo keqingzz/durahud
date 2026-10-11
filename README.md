@@ -27,10 +27,44 @@ Minecraft 1.20.1 · Fabric · 纯客户端 · MIT
 
 1. Minecraft 1.20.1 + Fabric Loader >= 0.15.11；
 2. 安装 **Fabric API**（必需）；
-3. 把 durahud-<版本>.jar 放进 mods 目录；
+3. 把 `durahud-<版本>.jar`（到 [Releases](https://github.com/keqingzz/durahud/releases) 下载）放进 `mods` 目录；
 4. 可选：**ModMenu**（装好后模组列表里会出现配置入口）、**Trinkets 3.x**（显示饰品耐久）。
 
 本模组声明为 client 环境：服务端不需要安装，多人游戏里也不会因为服务端没装而出问题。
+
+## 下载与版本历史
+
+所有版本都在 [Releases](https://github.com/keqingzz/durahud/releases) 页面：每个版本一个 tag（`v<版本>`）与一个 Release，附件是可直接放进 `mods` 的 jar，以及对应的源码 jar。
+
+| 版本 | 日期 | Release |
+|---|---|---|
+| 1.0.0 | 2026-10-01 | [v1.0.0](https://github.com/keqingzz/durahud/releases/tag/v1.0.0) |
+| 1.38.0 | 2026-10-01 | [v1.38.0](https://github.com/keqingzz/durahud/releases/tag/v1.38.0) |
+| 1.39.0 | 2026-10-01 | [v1.39.0](https://github.com/keqingzz/durahud/releases/tag/v1.39.0) |
+| 1.40.0 | 2026-10-01 | [v1.40.0](https://github.com/keqingzz/durahud/releases/tag/v1.40.0) |
+| 2.0.0 | 2026-10-01 | [v2.0.0](https://github.com/keqingzz/durahud/releases/tag/v2.0.0) |
+| 2.0.1 | 2026-10-01 | [v2.0.1](https://github.com/keqingzz/durahud/releases/tag/v2.0.1) |
+| 2.0.2 | 2026-10-02 | [v2.0.2](https://github.com/keqingzz/durahud/releases/tag/v2.0.2) |
+| 2.0.3 | 2026-10-02 | [v2.0.3](https://github.com/keqingzz/durahud/releases/tag/v2.0.3) |
+| 2.0.4 | 2026-10-02 | [v2.0.4](https://github.com/keqingzz/durahud/releases/tag/v2.0.4) |
+| 2.0.5 | 2026-10-02 | [v2.0.5](https://github.com/keqingzz/durahud/releases/tag/v2.0.5) |
+| 2.0.6 | 2026-10-02 | [v2.0.6](https://github.com/keqingzz/durahud/releases/tag/v2.0.6) |
+| 2.0.7 | 2026-10-02 | [v2.0.7](https://github.com/keqingzz/durahud/releases/tag/v2.0.7) |
+| 2.1.0 | 2026-10-02 | [v2.1.0](https://github.com/keqingzz/durahud/releases/tag/v2.1.0) |
+| 2.1.1 | 2026-10-02 | [v2.1.1](https://github.com/keqingzz/durahud/releases/tag/v2.1.1) |
+| 2.1.2 | 2026-10-02 | [v2.1.2](https://github.com/keqingzz/durahud/releases/tag/v2.1.2) |
+| 2.1.3 | 2026-10-02 | [v2.1.3](https://github.com/keqingzz/durahud/releases/tag/v2.1.3) |
+| 2.1.4 | 2026-10-02 | [v2.1.4](https://github.com/keqingzz/durahud/releases/tag/v2.1.4) |
+| 2.1.5 | 2026-10-08 | [v2.1.5](https://github.com/keqingzz/durahud/releases/tag/v2.1.5) |
+| 2.1.6 | 2026-10-11 | [v2.1.6](https://github.com/keqingzz/durahud/releases/tag/v2.1.6) |
+| 2.1.7 | 2026-10-11 | [v2.1.7](https://github.com/keqingzz/durahud/releases/tag/v2.1.7) |
+
+几点说明：
+
+- **1.0.0 与 1.38.0 只有开发构建**：attachments 里是 `durahud-<版本>-dev.jar`（named mappings，**不能**直接放进 `mods`）与源码 jar —— 这两版当时没有产出可安装的世界发布 jar。
+- **2.1.6 的 jar 是由 tag 源码重建的**：这一版的原始二进制没有留存下来，所以现在的 `durahud-2.1.6.jar` 是用 tag `v2.1.6` 的源码重新构建的（85,246 字节，与当时的构建记录一致，93 个单元测试全绿）。
+- 每个 Release 的正文就是该版本在开发文档里的更新说明原文（2.1.4 在开发文档里没有独立条目，已在正文里注明）。
+- 仓库的提交历史是**逐版本**的：从 `Initial commit` 到 2.1.7，每个版本一个提交（`git log` 可以看到每一版到底改了什么），每个提交都有对应的 tag。
 
 ## 使用
 
